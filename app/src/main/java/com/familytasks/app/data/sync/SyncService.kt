@@ -65,7 +65,7 @@ class SyncService : Service() {
     private fun startHttpServer() {
         httpServer = HttpServer(8080) { incoming ->
             val localTasks = syncUseCase.getLocalSnapshot()
-            val localDevices = syncUseCase.getLocalDevices()
+            val localDevices = buildDevicesPayload()
 
             syncUseCase.mergeAll(
                 incoming.tasks.map { it.toDomain() },
@@ -107,7 +107,7 @@ class SyncService : Service() {
             syncManager.setSyncState(SyncState.SYNCING)
             try {
                 val localTasks = syncUseCase.getLocalSnapshot()
-                val localDevices = syncUseCase.getLocalDevices()
+                val localDevices = buildDevicesPayload()
                 val payload = SyncPayload(
                     deviceId = deviceIdManager.deviceId,
                     tasks = localTasks.map { it.toDto() },
@@ -130,6 +130,17 @@ class SyncService : Service() {
                 syncManager.setSyncState(SyncState.ERROR)
             }
         }
+    }
+
+    private suspend fun buildDevicesPayload(): List<Device> {
+        val me = Device(
+            deviceId = deviceIdManager.deviceId,
+            displayName = prefs.displayName,
+            color = prefs.avatarColor
+        )
+        val others = syncUseCase.getLocalDevices()
+            .filter { it.deviceId != deviceIdManager.deviceId }
+        return listOf(me) + others
     }
 
     private fun createNotificationChannel() {

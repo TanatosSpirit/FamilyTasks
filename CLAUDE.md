@@ -183,6 +183,10 @@ CAMERA                        ← для сканирования QR
 
 `SyncService` объявлен с `android:foregroundServiceType="connectedDevice|dataSync"` (обязательно для Android 14+).
 
+### Cleartext HTTP (Android 9+)
+
+Синхронизация идёт по HTTP (не HTTPS). Android 9+ блокирует cleartext-трафик по умолчанию. В `AndroidManifest.xml` подключён `@xml/network_security_config` с `cleartextTrafficPermitted="true"`. **Без этого OkHttp бросает исключение ещё до отправки запроса** — `HttpClient.sync()` вернёт `null`, и UI покажет "Ошибка синхронизации" вне зависимости от состояния сети.
+
 ---
 
 ## Ключевые файлы
@@ -205,6 +209,7 @@ CAMERA                        ← для сканирования QR
 - **UDP broadcast**: может быть заблокирован в корпоративных сетях. Для домашней сети не актуально. Fallback — ручной ввод IP в настройках (не реализован, добавить при необходимости).
 - **Два устройства**: архитектура рассчитана строго на два. Третье потребует изменения логики sync и UI.
 - **Фоновая работа**: `SyncService` как Foreground Service — единственный надёжный способ держать HTTP-сервер и UDP-листенер живыми.
+- **WifiReceiver не работает на Android 8+**: `WIFI_STATE_CHANGED` входит в список implicit broadcasts, которые Android 8+ не доставляет ресиверам из манифеста. Триггер синхронизации при смене WiFi фактически не срабатывает — полагаемся на UDP-цикл (30 сек) и WorkManager (5 мин).
 
 ---
 
@@ -215,3 +220,21 @@ CAMERA                        ← для сканирования QR
 - Удаление задач — только `taskRepository.deleteTask(id, updatedAt)`, который ставит `deleted = true`. Физического удаления нет.
 - StateFlow для UI-состояния, `collectAsStateWithLifecycle()` в Compose.
 - `combine` с >5 потоками: сначала сгруппировать в промежуточные data-классы (см. `TaskListViewModel`).
+
+### Данные об устройствах — два источника
+
+- **Room (`devices`)** — хранит данные о партнёре (получены через QR или sync). Своё устройство там **не хранится**.
+- **PreferencesManager** — единственный источник для своего `displayName` и `avatarColor`.
+
+Следствия:
+1. `SyncService.buildDevicesPayload()` всегда добавляет себя из `PreferencesManager`, чтобы партнёр получал актуальное имя при каждом sync.
+2. `CreateTaskViewModel` и `TaskDetailViewModel` при формировании списка "назначить" синтезируют запись о себе из `PreferencesManager` — **не из Room**.
+3. `onPeerDiscovered` в `UdpDiscovery` **не перезаписывает** `displayName`/`color`, если запись уже есть в базе — только обновляет `lastSeenAt`.
+
+### HttpServer — чтение тела запроса
+
+`NanoHTTPD` отдаёт `InputStream`; `InputStream.read()` не гарантирует чтение всех байт за один вызов. Всегда использовать `DataInputStream(session.inputStream).readFully(body)`.
+
+### triggerSync — защита от параллельных вызовов
+
+`triggerSync()` проверяет `syncState == SYNCING` и возвращается без действий, если синхронизация уже идёт. Оба устройства делают UDP-broadcast одновременно — без этой защиты возникает гонка состояний.
