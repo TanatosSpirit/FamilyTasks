@@ -1,0 +1,290 @@
+package com.familytasks.app.ui.tasks
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.familytasks.app.data.sync.SyncState
+import com.familytasks.app.domain.model.AssigneeFilter
+import com.familytasks.app.domain.model.Priority
+import com.familytasks.app.domain.model.SortOrder
+import com.familytasks.app.domain.model.StatusFilter
+import com.familytasks.app.domain.model.Task
+import com.familytasks.app.domain.model.TaskStatus
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun TaskListScreen(
+    onTaskClick: (String) -> Unit,
+    onCreateTask: () -> Unit,
+    onSettings: () -> Unit,
+    vm: TaskListViewModel = hiltViewModel()
+) {
+    val state by vm.uiState.collectAsStateWithLifecycle()
+    var sortMenuOpen by remember { mutableStateOf(false) }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Column {
+                        Text("FamilyTasks")
+                        Text(
+                            text = syncStatusText(state.syncState, state.lastSyncAt, state.peerOnline),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (state.peerOnline) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                },
+                actions = {
+                    Box {
+                        IconButton(onClick = { sortMenuOpen = true }) {
+                            Icon(Icons.Default.Sync, "Сортировка")
+                        }
+                        DropdownMenu(expanded = sortMenuOpen, onDismissRequest = { sortMenuOpen = false }) {
+                            DropdownMenuItem(
+                                text = { Text("По сроку") },
+                                onClick = { vm.setSortOrder(SortOrder.DUE_DATE); sortMenuOpen = false }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("По приоритету") },
+                                onClick = { vm.setSortOrder(SortOrder.PRIORITY); sortMenuOpen = false }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("По дате создания") },
+                                onClick = { vm.setSortOrder(SortOrder.CREATED_AT); sortMenuOpen = false }
+                            )
+                        }
+                    }
+                    IconButton(onClick = onSettings) {
+                        Icon(Icons.Default.Settings, "Настройки")
+                    }
+                }
+            )
+        },
+        floatingActionButton = {
+            FloatingActionButton(onClick = onCreateTask) {
+                Icon(Icons.Default.Add, "Создать задачу")
+            }
+        }
+    ) { padding ->
+        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+            FilterRow(
+                assigneeFilter = state.assigneeFilter,
+                statusFilter = state.statusFilter,
+                onAssigneeFilter = vm::setAssigneeFilter,
+                onStatusFilter = vm::setStatusFilter,
+                myDeviceId = vm.deviceIdManager.deviceId
+            )
+            if (state.tasks.isEmpty()) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("Нет задач", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            } else {
+                LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    items(state.tasks, key = { it.id }) { task ->
+                        TaskCard(
+                            task = task,
+                            creatorColor = state.devices[task.createdBy]?.color,
+                            assigneeColor = task.assignedTo?.let { state.devices[it]?.color },
+                            onClick = { onTaskClick(task.id) }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FilterRow(
+    assigneeFilter: AssigneeFilter,
+    statusFilter: StatusFilter,
+    onAssigneeFilter: (AssigneeFilter) -> Unit,
+    onStatusFilter: (StatusFilter) -> Unit,
+    myDeviceId: String
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        FilterChip(
+            selected = assigneeFilter == AssigneeFilter.ALL,
+            onClick = { onAssigneeFilter(AssigneeFilter.ALL) },
+            label = { Text("Все") }
+        )
+        FilterChip(
+            selected = assigneeFilter == AssigneeFilter.MINE,
+            onClick = { onAssigneeFilter(AssigneeFilter.MINE) },
+            label = { Text("Мои") }
+        )
+        FilterChip(
+            selected = assigneeFilter == AssigneeFilter.OTHERS,
+            onClick = { onAssigneeFilter(AssigneeFilter.OTHERS) },
+            label = { Text("Чужие") }
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        FilterChip(
+            selected = statusFilter == StatusFilter.DONE,
+            onClick = {
+                onStatusFilter(if (statusFilter == StatusFilter.DONE) StatusFilter.ACTIVE else StatusFilter.DONE)
+            },
+            label = { Text("Готово") }
+        )
+    }
+}
+
+@Composable
+private fun TaskCard(
+    task: Task,
+    creatorColor: Int?,
+    assigneeColor: Int?,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 4.dp)
+            .clickable(onClick = onClick),
+        colors = CardDefaults.cardColors(
+            containerColor = priorityContainerColor(task.priority)
+        )
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (creatorColor != null) {
+                Box(
+                    modifier = Modifier
+                        .size(10.dp)
+                        .clip(CircleShape)
+                        .background(Color(creatorColor))
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = task.title,
+                    style = MaterialTheme.typography.bodyLarge,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textDecoration = if (task.status == TaskStatus.DONE) TextDecoration.LineThrough else null
+                )
+                if (task.dueDate != null) {
+                    Text(
+                        text = "До: ${formatDate(task.dueDate)}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = dueDateColor(task.dueDate)
+                    )
+                }
+            }
+            if (assigneeColor != null) {
+                Spacer(modifier = Modifier.width(8.dp))
+                Box(
+                    modifier = Modifier
+                        .size(24.dp)
+                        .clip(CircleShape)
+                        .background(Color(assigneeColor))
+                )
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            StatusBadge(task.status)
+        }
+    }
+}
+
+@Composable
+private fun StatusBadge(status: TaskStatus) {
+    val (text, color) = when (status) {
+        TaskStatus.TODO -> "Новая" to Color(0xFF9E9E9E)
+        TaskStatus.IN_PROGRESS -> "В процессе" to Color(0xFF2196F3)
+        TaskStatus.DONE -> "Готово" to Color(0xFF4CAF50)
+    }
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelSmall,
+        color = color
+    )
+}
+
+@Composable
+private fun priorityContainerColor(priority: Priority): androidx.compose.ui.graphics.Color {
+    return when (priority) {
+        Priority.HIGH -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
+        Priority.NORMAL -> MaterialTheme.colorScheme.surface
+        Priority.LOW -> MaterialTheme.colorScheme.surfaceVariant
+    }
+}
+
+private fun dueDateColor(dueDate: Long): Color {
+    val diff = dueDate - System.currentTimeMillis()
+    return when {
+        diff < 0 -> Color(0xFFF44336)
+        diff < 3_600_000 -> Color(0xFFFF9800)
+        else -> Color(0xFF9E9E9E)
+    }
+}
+
+private fun formatDate(ts: Long): String =
+    SimpleDateFormat("dd MMM HH:mm", Locale.getDefault()).format(Date(ts))
+
+private fun syncStatusText(state: SyncState, lastSyncAt: Long, peerOnline: Boolean): String {
+    return when {
+        !peerOnline -> "Офлайн"
+        state == SyncState.SYNCING -> "Синхронизация..."
+        state == SyncState.ERROR -> "Ошибка синхронизации"
+        lastSyncAt == 0L -> "Онлайн"
+        else -> {
+            val diff = (System.currentTimeMillis() - lastSyncAt) / 60_000
+            "Синхр. $diff мин назад"
+        }
+    }
+}

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">FamilyTasks</string>
+    <string name="sync_service_notification_title">FamilyTasks синхронизация</string>
+    <string name="sync_service_notification_text">Синхронизация активна</string>
+</resources>
