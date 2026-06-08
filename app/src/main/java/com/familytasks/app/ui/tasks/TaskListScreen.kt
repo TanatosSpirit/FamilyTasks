@@ -75,9 +75,13 @@ fun TaskListScreen(
                     Column {
                         Text("FamilyTasks")
                         Text(
-                            text = syncStatusText(state.syncState, state.lastSyncAt, state.peerOnline),
+                            text = syncStatusText(state.syncState, state.lastSyncAt, state.peerOnline, state.wifiConnected),
                             style = MaterialTheme.typography.labelSmall,
-                            color = if (state.peerOnline) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurfaceVariant
+                            color = when {
+                                !state.wifiConnected -> MaterialTheme.colorScheme.onSurfaceVariant
+                                state.peerOnline -> Color(0xFF4CAF50)
+                                else -> MaterialTheme.colorScheme.onSurfaceVariant
+                            }
                         )
                     }
                 },
@@ -276,8 +280,9 @@ private fun dueDateColor(dueDate: Long): Color {
 private fun formatDate(ts: Long): String =
     SimpleDateFormat("dd MMM HH:mm", Locale.getDefault()).format(Date(ts))
 
-private fun syncStatusText(state: SyncState, lastSyncAt: Long, peerOnline: Boolean): String {
+private fun syncStatusText(state: SyncState, lastSyncAt: Long, peerOnline: Boolean, wifiConnected: Boolean): String {
     return when {
+        !wifiConnected -> "Нет подключения к Wi-Fi"
         !peerOnline -> "Офлайн"
         state == SyncState.SYNCING -> "Синхронизация..."
         state == SyncState.ERROR -> "Ошибка синхронизации"

@@ -1,5 +1,9 @@
 package com.familytasks.app.ui.tasks
 
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.familytasks.app.core.DeviceIdManager
@@ -16,6 +20,7 @@ import com.familytasks.app.domain.model.TaskStatus
 import com.familytasks.app.domain.repository.DeviceRepository
 import com.familytasks.app.domain.repository.TaskRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -31,7 +36,8 @@ data class TaskListUiState(
     val sortOrder: SortOrder = SortOrder.DUE_DATE,
     val syncState: SyncState = SyncState.IDLE,
     val lastSyncAt: Long = 0L,
-    val peerOnline: Boolean = false
+    val peerOnline: Boolean = false,
+    val wifiConnected: Boolean = true
 )
 
 private data class Filters(
@@ -43,11 +49,13 @@ private data class Filters(
 private data class SyncStatus(
     val state: SyncState,
     val lastSyncAt: Long,
-    val peerIp: String?
+    val peerIp: String?,
+    val wifiConnected: Boolean
 )
 
 @HiltViewModel
 class TaskListViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val taskRepository: TaskRepository,
     private val deviceRepository: DeviceRepository,
     private val syncManager: SyncManager,
@@ -59,12 +67,44 @@ class TaskListViewModel @Inject constructor(
     private val _statusFilter = MutableStateFlow(StatusFilter.ACTIVE)
     private val _sortOrder = MutableStateFlow(SortOrder.DUE_DATE)
 
+    private val _wifiConnected = MutableStateFlow(true)
+
+    private val cm = context.getSystemService(ConnectivityManager::class.java)
+
+    private val networkCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) = refreshWifiState()
+        override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) = refreshWifiState()
+        override fun onLost(network: Network) = refreshWifiState()
+    }
+
+    init {
+        cm.registerDefaultNetworkCallback(networkCallback)
+        refreshWifiState()
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        cm.unregisterNetworkCallback(networkCallback)
+    }
+
+    private fun refreshWifiState() {
+        val caps = cm.getNetworkCapabilities(cm.activeNetwork)
+        _wifiConnected.value = caps != null &&
+            (caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+             caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET))
+    }
+
     private val filters = combine(_assigneeFilter, _statusFilter, _sortOrder) { a, s, o ->
         Filters(a, s, o)
     }
 
-    private val syncStatus = combine(syncManager.syncState, syncManager.lastSyncAt, syncManager.peerIp) { st, ts, ip ->
-        SyncStatus(st, ts, ip)
+    private val syncStatus = combine(
+        syncManager.syncState,
+        syncManager.lastSyncAt,
+        syncManager.peerIp,
+        _wifiConnected
+    ) { st, ts, ip, wifi ->
+        SyncStatus(st, ts, ip, wifi)
     }
 
     val uiState: StateFlow<TaskListUiState> = combine(
@@ -109,7 +149,8 @@ class TaskListViewModel @Inject constructor(
             sortOrder = f.sortOrder,
             syncState = sync.state,
             lastSyncAt = sync.lastSyncAt,
-            peerOnline = sync.peerIp != null
+            peerOnline = sync.peerIp != null,
+            wifiConnected = sync.wifiConnected
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), TaskListUiState())
 

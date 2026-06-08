@@ -3,7 +3,9 @@ package com.familytasks.app
 import android.app.Application
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
+import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import com.familytasks.app.data.sync.SyncWorker
@@ -30,7 +32,11 @@ class FamilyTasksApplication : Application(), Configuration.Provider {
     }
 
     private fun schedulePeriodicSync() {
+        val constraints = Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.UNMETERED)
+            .build()
         val request = PeriodicWorkRequestBuilder<SyncWorker>(5, TimeUnit.MINUTES)
+            .setConstraints(constraints)
             .build()
         WorkManager.getInstance(this).enqueueUniquePeriodicWork(
             "periodic_sync",

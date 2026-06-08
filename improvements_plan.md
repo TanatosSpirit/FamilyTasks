@@ -22,7 +22,7 @@
 
 ```kotlin
 val constraints = Constraints.Builder()
-    .setRequiredNetworkType(NetworkType.CONNECTED)
+    .setRequiredNetworkType(NetworkType.UNMETERED)
     .build()
 
 val request = PeriodicWorkRequestBuilder<SyncWorker>(5, TimeUnit.MINUTES)
