@@ -56,8 +56,8 @@ syncState: IDLE      → ничего не происходит
 При старте `SyncService` (или при потере `peerIp`):
 1. Захватить `MulticastLock` — разрешает WiFi-чипу пропускать broadcast-пакеты в CPU
 2. Открыть `DatagramSocket` на UDP порту `9090` — начать слушать
-3. Запустить burst: отправить **5 UDP-пакетов** на `255.255.255.255:9090` с интервалом **1.5 секунды**
-4. После burst broadcast-корутина завершается; listen-корутина продолжает работать
+3. Запустить `broadcastJob`: отправить **5 UDP-пакетов** с интервалом **1.5с**, затем ждать **30с**, затем снова 5 пакетов — цикл до обнаружения партнёра
+4. Listen-корутина работает параллельно и независимо от broadcast-цикла
 
 ### Формат UDP-пакета
 
@@ -71,7 +71,7 @@ syncState: IDLE      → ничего не происходит
 1. **Немедленно ответить своим пакетом** — иначе партнёр не узнает наш IP
 2. Вызвать `onPeerDiscovered(senderIp, deviceId)` → в `SyncService`:
    - `syncManager.setPeerIp(ip)` — запомнить IP
-   - `udpDiscovery.pauseDiscovery()` — закрыть сокет, отпустить `MulticastLock`
+   - `udpDiscovery.pauseDiscovery()` — остановить broadcast-цикл (сокет и lock остаются)
    - `triggerSync()` — немедленно синхронизировать задачи
 
 ### Параметры
@@ -82,7 +82,8 @@ syncState: IDLE      → ничего не происходит
 | Broadcast-адрес | 255.255.255.255 |
 | Количество пакетов в burst | 5 |
 | Интервал между пакетами | 1.5 секунды |
-| Общее время burst | ~6 секунд |
+| Пауза между повторными burst | 30 секунд |
+| Максимальная задержка обнаружения | ~30 секунд |
 | Фильтрация входящих | только от `pairedDeviceId` |
 
 ### MulticastLock — жизненный цикл
@@ -239,7 +240,7 @@ Flow<List<Task>>
      │                                         │
      │  onPeerDiscovered(ipB)                  │  onPeerDiscovered(ipA)
      │  setPeerIp(ipB)                         │  setPeerIp(ipA)
-     │  pauseDiscovery() → releaseLock()       │  pauseDiscovery() → releaseLock()
+     │  pauseDiscovery() → стоп burst          │  pauseDiscovery() → стоп burst
      │  triggerSync()                          │  triggerSync()
      │                                         │
      │──── POST /sync (все задачи A) ────────►│
@@ -273,9 +274,8 @@ Flow<List<Task>>
      │  PeerUnreachableException
      │  setPeerIp(null)
      │  syncState = ERROR
-     │  restartDiscovery()
-     │  acquireLock(), startListening(), burst
-     │  ... ждём UDP от партнёра ...
+     │  restartDiscovery() → новый burst-цикл
+     │  ... ждём UDP от партнёра (burst каждые 30с) ...
 ```
 
 ### Партнёр вернулся в сеть
@@ -288,7 +288,7 @@ Flow<List<Task>>
      │  sendBroadcast() → ответ партнёру        │
      │  onPeerDiscovered(ipB)                   │  onPeerDiscovered(ipA)
      │  setPeerIp(ipB)                          │  setPeerIp(ipA)
-     │  pauseDiscovery()                        │  pauseDiscovery()
+     │  pauseDiscovery() → стоп burst           │  pauseDiscovery() → стоп burst
      │  triggerSync()                           │  triggerSync()
      │──── POST /sync ────────────────────────►│
      │◄─── ответ ─────────────────────────────│
@@ -317,7 +317,8 @@ Flow<List<Task>>
 |---|---|---|
 | UDP порт | 9090 | `UdpDiscovery.kt` |
 | UDP burst, количество пакетов | 5 | `UdpDiscovery.kt` |
-| UDP burst, интервал | 1 500 мс | `UdpDiscovery.kt` |
+| UDP burst, интервал между пакетами | 1 500 мс | `UdpDiscovery.kt` |
+| UDP burst, пауза между повторами | 30 000 мс | `UdpDiscovery.kt` |
 | HTTP порт | 8080 | `HttpServer.kt`, `HttpClient.kt` |
 | HTTP connect timeout | 5 000 мс | `HttpClient.kt` |
 | HTTP read timeout | 10 000 мс | `HttpClient.kt` |

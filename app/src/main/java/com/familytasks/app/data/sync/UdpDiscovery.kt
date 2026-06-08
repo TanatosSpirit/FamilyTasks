@@ -18,6 +18,7 @@ private const val UDP_PORT = 9090
 private const val BROADCAST_ADDRESS = "255.255.255.255"
 private const val BURST_COUNT = 5
 private const val BURST_INTERVAL_MS = 1_500L
+private const val BURST_RETRY_INTERVAL_MS = 30_000L
 
 @Serializable
 data class DiscoveryPacket(val deviceId: String, val httpPort: Int)
@@ -75,10 +76,13 @@ class UdpDiscovery(
 
     private fun startBurst(scope: CoroutineScope) {
         broadcastJob = scope.launch(Dispatchers.IO) {
-            repeat(BURST_COUNT) {
-                if (!isActive) return@launch
-                sendBroadcast()
-                delay(BURST_INTERVAL_MS)
+            while (isActive) {
+                repeat(BURST_COUNT) {
+                    if (!isActive) return@launch
+                    sendBroadcast()
+                    delay(BURST_INTERVAL_MS)
+                }
+                delay(BURST_RETRY_INTERVAL_MS)
             }
         }
     }
