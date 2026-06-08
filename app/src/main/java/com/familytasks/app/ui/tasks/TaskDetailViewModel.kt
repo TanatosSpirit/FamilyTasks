@@ -69,9 +69,6 @@ class TaskDetailViewModel @Inject constructor(
             taskRepository.upsertTask(updated)
             _task.value = updated
             notificationScheduler.scheduleDueNotifications(updated)
-            if (updated.createdBy != deviceIdManager.deviceId) {
-                notificationScheduler.notifyStatusChanged(updated)
-            }
             launch(kotlinx.coroutines.Dispatchers.Main) { onDone() }
         }
     }
