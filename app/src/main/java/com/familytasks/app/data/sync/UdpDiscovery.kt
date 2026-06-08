@@ -15,8 +15,9 @@ import java.net.DatagramSocket
 import java.net.InetAddress
 
 private const val UDP_PORT = 9090
-private const val BROADCAST_INTERVAL_MS = 30_000L
 private const val BROADCAST_ADDRESS = "255.255.255.255"
+private const val BURST_COUNT = 5
+private const val BURST_INTERVAL_MS = 1_500L
 
 @Serializable
 data class DiscoveryPacket(val deviceId: String, val httpPort: Int)
@@ -34,38 +35,69 @@ class UdpDiscovery(
     private var listenSocket: DatagramSocket? = null
 
     fun start(scope: CoroutineScope) {
-        multicastLock = wifiManager.createMulticastLock("FamilyTasksLock").also {
-            it.setReferenceCounted(true)
-            it.acquire()
-        }
+        acquireLock()
         startListening(scope)
-        startBroadcasting(scope)
+        startBurst(scope)
     }
 
     fun stop() {
         broadcastJob?.cancel()
         listenJob?.cancel()
         listenSocket?.close()
-        multicastLock?.release()
+        listenSocket = null
+        releaseLock()
+    }
+
+    // Peer IP is now known — no need to keep listening
+    fun pauseDiscovery() {
+        broadcastJob?.cancel()
+        broadcastJob = null
+        listenJob?.cancel()
+        listenJob = null
+        listenSocket?.close()
+        listenSocket = null
+        releaseLock()
+    }
+
+    // Peer IP lost — restart full discovery cycle
+    fun restartDiscovery(scope: CoroutineScope) {
+        broadcastJob?.cancel()
+        listenJob?.cancel()
+        listenSocket?.close()
+        listenSocket = null
+        acquireLock()
+        startListening(scope)
+        startBurst(scope)
+    }
+
+    private fun acquireLock() {
+        if (multicastLock?.isHeld == true) return
+        multicastLock = wifiManager.createMulticastLock("FamilyTasksLock").also {
+            it.setReferenceCounted(false)
+            it.acquire()
+        }
+    }
+
+    private fun releaseLock() {
+        multicastLock?.takeIf { it.isHeld }?.release()
         multicastLock = null
     }
 
-    fun broadcastOnce(scope: CoroutineScope) {
-        scope.launch(Dispatchers.IO) { sendBroadcast() }
-    }
-
-    private fun startBroadcasting(scope: CoroutineScope) {
+    private fun startBurst(scope: CoroutineScope) {
         broadcastJob = scope.launch(Dispatchers.IO) {
-            while (isActive) {
+            repeat(BURST_COUNT) {
+                if (!isActive) return@launch
                 sendBroadcast()
-                delay(BROADCAST_INTERVAL_MS)
+                delay(BURST_INTERVAL_MS)
             }
         }
     }
 
     private fun startListening(scope: CoroutineScope) {
         listenJob = scope.launch(Dispatchers.IO) {
-            val socket = DatagramSocket(UDP_PORT).also { listenSocket = it }
+            val socket = try {
+                DatagramSocket(UDP_PORT).also { listenSocket = it }
+            } catch (_: Exception) { return@launch }
             val buffer = ByteArray(1024)
             while (isActive) {
                 try {
@@ -73,10 +105,12 @@ class UdpDiscovery(
                     socket.receive(packet)
                     val data = String(packet.data, 0, packet.length)
                     val discovery = json.decodeFromString<DiscoveryPacket>(data)
+                    val senderIp = packet.address.hostAddress ?: continue
                     if (discovery.deviceId != ownDeviceId &&
                         (pairedDeviceId == null || discovery.deviceId == pairedDeviceId)
                     ) {
-                        onPeerDiscovered(packet.address.hostAddress ?: return@launch, discovery.deviceId)
+                        sendBroadcast() // respond so peer learns our IP
+                        onPeerDiscovered(senderIp, discovery.deviceId)
                     }
                 } catch (_: Exception) {}
             }

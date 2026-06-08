@@ -4,7 +4,10 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.net.wifi.WifiManager
 import android.os.Build
@@ -15,12 +18,16 @@ import com.familytasks.app.core.DeviceIdManager
 import com.familytasks.app.core.PreferencesManager
 import com.familytasks.app.domain.model.Device
 import com.familytasks.app.domain.repository.DeviceRepository
+import com.familytasks.app.domain.repository.TaskRepository
 import com.familytasks.app.domain.usecase.SyncUseCase
 import com.familytasks.app.notifications.NotificationScheduler
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -33,11 +40,32 @@ class SyncService : Service() {
     @Inject lateinit var httpClient: HttpClient
     @Inject lateinit var syncManager: SyncManager
     @Inject lateinit var deviceRepository: DeviceRepository
+    @Inject lateinit var taskRepository: TaskRepository
     @Inject lateinit var notificationScheduler: NotificationScheduler
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var httpServer: HttpServer? = null
     private var udpDiscovery: UdpDiscovery? = null
+
+    @Suppress("DEPRECATION")
+    private val wifiReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            val info = intent.getParcelableExtra<android.net.NetworkInfo>(
+                WifiManager.EXTRA_NETWORK_INFO
+            ) ?: return
+            when {
+                info.isConnected -> {
+                    if (syncManager.peerIp.value == null) {
+                        udpDiscovery?.restartDiscovery(scope)
+                    }
+                }
+                !info.isConnectedOrConnecting -> {
+                    syncManager.setPeerIp(null)
+                    udpDiscovery?.pauseDiscovery()
+                }
+            }
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -45,6 +73,8 @@ class SyncService : Service() {
         startForegroundCompat()
         startHttpServer()
         startUdpDiscovery()
+        observeTaskChanges()
+        registerReceiver(wifiReceiver, IntentFilter(WifiManager.NETWORK_STATE_CHANGED_ACTION))
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -58,6 +88,7 @@ class SyncService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        unregisterReceiver(wifiReceiver)
         httpServer?.stop()
         udpDiscovery?.stop()
     }
@@ -88,6 +119,7 @@ class SyncService : Service() {
             pairedDeviceId = prefs.pairedDeviceId,
             onPeerDiscovered = { ip, deviceId ->
                 syncManager.setPeerIp(ip)
+                udpDiscovery?.pauseDiscovery()
                 scope.launch {
                     val existing = deviceRepository.getDeviceById(deviceId)
                     deviceRepository.upsertDevice(
@@ -98,6 +130,16 @@ class SyncService : Service() {
                 triggerSync()
             }
         ).also { it.start(scope) }
+    }
+
+    private fun observeTaskChanges() {
+        scope.launch {
+            taskRepository.observeAllTasks()
+                .drop(1)
+                .distinctUntilChanged()
+                .debounce(3_000L)
+                .collect { triggerSync() }
+        }
     }
 
     private fun triggerSync() {
@@ -126,6 +168,10 @@ class SyncService : Service() {
                 } else {
                     syncManager.setSyncState(SyncState.ERROR)
                 }
+            } catch (e: PeerUnreachableException) {
+                syncManager.setPeerIp(null)
+                syncManager.setSyncState(SyncState.ERROR)
+                udpDiscovery?.restartDiscovery(scope)
             } catch (e: Exception) {
                 syncManager.setSyncState(SyncState.ERROR)
             }

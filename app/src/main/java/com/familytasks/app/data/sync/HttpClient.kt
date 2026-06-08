@@ -8,9 +8,13 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import java.net.ConnectException
+import java.net.SocketTimeoutException
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
+
+class PeerUnreachableException : Exception()
 
 @Singleton
 class HttpClient @Inject constructor() {
@@ -35,6 +39,10 @@ class HttpClient @Inject constructor() {
                 if (response.isSuccessful) {
                     response.body?.string()?.let { json.decodeFromString<SyncPayload>(it) }
                 } else null
+            } catch (e: SocketTimeoutException) {
+                throw PeerUnreachableException()
+            } catch (e: ConnectException) {
+                throw PeerUnreachableException()
             } catch (e: Exception) {
                 null
             }
