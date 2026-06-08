@@ -18,7 +18,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
@@ -88,7 +88,7 @@ fun TaskListScreen(
                 actions = {
                     Box {
                         IconButton(onClick = { sortMenuOpen = true }) {
-                            Icon(Icons.Default.Sync, "Сортировка")
+                            Icon(Icons.Default.Sort, "Сортировка")
                         }
                         DropdownMenu(expanded = sortMenuOpen, onDismissRequest = { sortMenuOpen = false }) {
                             DropdownMenuItem(
