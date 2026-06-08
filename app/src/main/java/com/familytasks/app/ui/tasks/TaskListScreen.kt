@@ -290,9 +290,6 @@ private fun syncStatusText(state: SyncState, lastSyncAt: Long, peerOnline: Boole
         state == SyncState.SYNCING -> "Синхронизация..."
         state == SyncState.ERROR -> "Ошибка синхронизации"
         lastSyncAt == 0L -> "Онлайн"
-        else -> {
-            val diff = (System.currentTimeMillis() - lastSyncAt) / 60_000
-            "Синхр. $diff мин назад"
-        }
+        else -> "Синхр. в ${SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(lastSyncAt))}"
     }
 }
