@@ -88,15 +88,19 @@ syncState: IDLE      → ничего не происходит
 ### MulticastLock — жизненный цикл
 
 ```
-SyncService.onCreate()     → acquireLock() + startListening()
-onPeerDiscovered()         → pauseDiscovery() → releaseLock()
-PeerUnreachableException   → restartDiscovery() → acquireLock()
-WiFi disconnect            → pauseDiscovery() → releaseLock()
-WiFi connect               → restartDiscovery() → acquireLock()
+SyncService.onCreate()     → acquireLock() + startListening() + burst
+onPeerDiscovered()         → pauseDiscovery() = только останавливает burst
+PeerUnreachableException   → restartDiscovery() = только шлёт новый burst
+WiFi disconnect            → pauseDiscovery() = останавливает burst
+WiFi connect               → restartDiscovery() = новый burst
 SyncService.onDestroy()    → stop() → releaseLock()
 ```
 
-`MulticastLock` держится **только пока `peerIp == null`**. После обнаружения партнёра WiFi-чип возвращается к аппаратной фильтрации broadcast-пакетов.
+`MulticastLock` держится **всё время жизни `SyncService`**. Listen-сокет всегда открыт.
+
+**Почему не освобождать при известном `peerIp`:** если партнёр ушёл из сети и вернулся (возможно с новым IP по DHCP), он пришлёт UDP burst. Устройство должно его услышать и сразу обновить `peerIp` — без ожидания HTTP-таймаута. Если lock отпущен, этот burst будет отфильтрован WiFi-чипом и discovery не произойдёт.
+
+Стоимость держать lock постоянно: CPU-прерывания на входящий broadcast/multicast трафик сети. Это несравнимо меньше, чем 2880 исходящих UDP-пакетов в сутки, которые были в старой модели.
 
 ---
 

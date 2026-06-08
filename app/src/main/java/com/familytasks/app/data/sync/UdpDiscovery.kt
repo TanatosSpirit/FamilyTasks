@@ -48,25 +48,15 @@ class UdpDiscovery(
         releaseLock()
     }
 
-    // Peer IP is now known — no need to keep listening
+    // Peer IP is now known — stop sending, but keep listening for reconnects
     fun pauseDiscovery() {
         broadcastJob?.cancel()
         broadcastJob = null
-        listenJob?.cancel()
-        listenJob = null
-        listenSocket?.close()
-        listenSocket = null
-        releaseLock()
     }
 
-    // Peer IP lost — restart full discovery cycle
+    // Peer IP lost — send a new burst (listen socket and lock already active)
     fun restartDiscovery(scope: CoroutineScope) {
         broadcastJob?.cancel()
-        listenJob?.cancel()
-        listenSocket?.close()
-        listenSocket = null
-        acquireLock()
-        startListening(scope)
         startBurst(scope)
     }
 

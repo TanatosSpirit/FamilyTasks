@@ -34,10 +34,12 @@
 При получении пакета от партнёра — **сначала отвечаем своим пакетом** (иначе партнёр не узнает наш IP), затем вызываем `onPeerDiscovered`.
 
 Новые методы:
-- `pauseDiscovery()` — останавливает broadcast + listen, отпускает MulticastLock (вызывается когда peerIp известен)
-- `restartDiscovery(scope)` — захватывает lock, запускает listen + burst (вызывается когда peerIp сброшен)
+- `pauseDiscovery()` — останавливает только broadcastJob (listen-сокет и lock не трогаются)
+- `restartDiscovery(scope)` — шлёт новый burst (listen уже жив, lock уже держится)
 
-MulticastLock: `setReferenceCounted(false)` — простое acquire/release без счётчика.
+MulticastLock держится **всё время жизни SyncService**. Освобождается только в `stop()`.
+
+**Почему не освобождать при известном `peerIp`:** партнёр может вернуться с новым IP (DHCP). При возвращении он пришлёт UDP burst — нужно его услышать немедленно. Если lock отпущен, burst отфильтруется WiFi-чипом — тупик: A считает B живым, B не может достучаться до A.
 
 ### HttpClient.kt ✅
 
@@ -45,7 +47,7 @@ MulticastLock: `setReferenceCounted(false)` — простое acquire/release �
 
 ### SyncService.kt ✅
 
-**`onPeerDiscovered` callback:** после `syncManager.setPeerIp(ip)` — вызывает `udpDiscovery.pauseDiscovery()`. Lock отпущен, listen-сокет закрыт.
+**`onPeerDiscovered` callback:** после `syncManager.setPeerIp(ip)` — вызывает `udpDiscovery.pauseDiscovery()`. Останавливает только burst, listen-сокет и lock остаются активными.
 
 **`triggerSync()`:** различает два типа ошибок:
 - `PeerUnreachableException` → `syncManager.setPeerIp(null)` + `udpDiscovery.restartDiscovery(scope)` + `ERROR`
@@ -81,7 +83,7 @@ Debounce реализован в `SyncService.observeTaskChanges()`. Менят�
 |---|---|---|---|
 | UDP broadcast (отправка) | 2880 раз/сутки | ~5 раз при подключении | **−99%** |
 | Пробуждение WiFi-радио для отправки | 2880 раз/сутки | ~5 раз/сутки | **−99%** |
-| MulticastLock | постоянно | только пока `peerIp == null` | **существенно меньше** |
+| MulticastLock | постоянно | постоянно | без изменений |
 | WorkManager wake-up | ~96 раз/сутки | 0 | **−100%** |
 | DatagramSocket создание/закрытие | каждые 30с | только burst | **−99%** |
 | HTTP sync | по polling | только при изменении задачи | зависит от активности |
