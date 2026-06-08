@@ -123,7 +123,8 @@ fun TaskListScreen(
                 statusFilter = state.statusFilter,
                 onAssigneeFilter = vm::setAssigneeFilter,
                 onStatusFilter = vm::setStatusFilter,
-                myDeviceId = vm.deviceIdManager.deviceId
+                myName = state.myName,
+                peerName = state.peerName
             )
             if (state.tasks.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -151,13 +152,15 @@ private fun FilterRow(
     statusFilter: StatusFilter,
     onAssigneeFilter: (AssigneeFilter) -> Unit,
     onStatusFilter: (StatusFilter) -> Unit,
-    myDeviceId: String
+    myName: String,
+    peerName: String?
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
         FilterChip(
             selected = assigneeFilter == AssigneeFilter.ALL,
@@ -167,14 +170,14 @@ private fun FilterRow(
         FilterChip(
             selected = assigneeFilter == AssigneeFilter.MINE,
             onClick = { onAssigneeFilter(AssigneeFilter.MINE) },
-            label = { Text("Мои") }
+            label = { Text(myName.ifEmpty { "Мои" }) }
         )
         FilterChip(
             selected = assigneeFilter == AssigneeFilter.OTHERS,
             onClick = { onAssigneeFilter(AssigneeFilter.OTHERS) },
-            label = { Text("Чужие") }
+            label = { Text(peerName ?: "Чужие") }
         )
-        Spacer(modifier = Modifier.width(8.dp))
+        Spacer(modifier = Modifier.weight(1f))
         FilterChip(
             selected = statusFilter == StatusFilter.DONE,
             onClick = {
