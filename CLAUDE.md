@@ -63,7 +63,7 @@ data/
                     SyncWorker, SyncManager, BootReceiver
 
 notifications/   ← NotificationScheduler, DueNotificationWorker
-core/            ← DeviceIdManager, PreferencesManager
+core/            ← DeviceIdManager, PreferencesManager, AppLogger
 di/              ← AppModule, DatabaseModule, WorkerModule
 
 ui/
@@ -73,6 +73,7 @@ ui/
   tasks/         ← TaskListScreen, TaskDetailScreen, CreateTaskScreen,
                     EditTaskContent + ViewModels
   settings/      ← SettingsScreen + ViewModel
+  logs/          ← LogsScreen, LogsViewModel
 ```
 
 ### Синхронизация — ключевой поток
@@ -200,6 +201,7 @@ CAMERA                        ← для сканирования QR
 | `SyncDto.kt` | сериализуемые DTO + маппинг domain ↔ DTO |
 | `PreferencesManager.kt` | все ключи SharedPreferences |
 | `TaskListViewModel.kt` | фильтрация, сортировка, compose state |
+| `AppLogger.kt` | встроенное логирование — singleton, circular buffer 500 записей |
 
 ---
 
@@ -238,3 +240,18 @@ CAMERA                        ← для сканирования QR
 ### triggerSync — защита от параллельных вызовов
 
 `triggerSync()` проверяет `syncState == SYNCING` и возвращается без действий, если синхронизация уже идёт. Оба устройства делают UDP-broadcast одновременно — без этой защиты возникает гонка состояний.
+
+### AppLogger — встроенный лог-вьюер
+
+`AppLogger` — Kotlin `object` (синглтон без DI) в `core/`. Хранит последние 500 записей в `ArrayDeque` в памяти, публикует их через `StateFlow<List<LogEntry>>`. Каждый вызов дублируется в Logcat.
+
+```kotlin
+AppLogger.d(TAG, "сообщение")   // уровни: d / i / w / e
+AppLogger.e(TAG, "ошибка", throwable)
+```
+
+Покрытые источники: `SyncService`, `SyncWorker`, `HttpClient`, `HttpServer`, `UdpDiscovery`, `MergeTasksUseCase`.
+
+Доступ в UI: **Настройки → Диагностика → Логи синхронизации**. Там же кнопка Share — экспортирует лог в `familytasks_log.txt` через стандартный Android Share Sheet (FileProvider, `cache/logs/`).
+
+**Удаление**: удалить `core/AppLogger.kt`, `ui/logs/`, убрать `Screen.Logs` из навигации, секцию «Диагностика» из `SettingsScreen`, заменить `AppLogger.` на `Log.` в sync-файлах и `MergeTasksUseCase.kt` (Find & Replace).

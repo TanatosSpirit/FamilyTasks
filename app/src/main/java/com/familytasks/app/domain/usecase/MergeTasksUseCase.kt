@@ -1,5 +1,6 @@
 package com.familytasks.app.domain.usecase
 
+import com.familytasks.app.core.AppLogger
 import com.familytasks.app.core.DeviceIdManager
 import com.familytasks.app.domain.model.Task
 import com.familytasks.app.domain.repository.TaskRepository
@@ -15,28 +16,45 @@ class MergeTasksUseCase @Inject constructor(
         val myDeviceId = deviceIdManager.deviceId
         val localTasks = taskRepository.getAllTasksSnapshot().associateBy { it.id }.toMutableMap()
 
+        AppLogger.i(TAG, "Merge: ${remoteTasks.size} remote, ${localTasks.size} local")
+
+        var added = 0; var updated = 0; var unchanged = 0
+
         for (remote in remoteTasks) {
             val local = localTasks[remote.id]
             when {
                 local == null -> {
                     localTasks[remote.id] = remote
+                    added++
+                    AppLogger.d(TAG, "New: '${remote.title}' (assigned=${if (remote.assignedTo == myDeviceId) "me" else "other"}, deleted=${remote.deleted})")
                     if (!remote.deleted && remote.assignedTo == myDeviceId) {
+                        AppLogger.i(TAG, "Notify: new task assigned to me '${remote.title}'")
                         notificationScheduler.notifyNewTask(remote)
                         notificationScheduler.scheduleDueNotifications(remote)
                     }
                 }
                 remote.updatedAt > local.updatedAt -> {
                     localTasks[remote.id] = remote
+                    updated++
+                    AppLogger.d(TAG, "Updated: '${remote.title}' (local=${local.updatedAt}, remote=${remote.updatedAt})")
                     if (!remote.deleted && remote.createdBy == myDeviceId && remote.status != local.status) {
+                        AppLogger.i(TAG, "Notify: status changed on my task '${remote.title}' ${local.status} → ${remote.status}")
                         notificationScheduler.notifyStatusChanged(remote)
                     }
                 }
+                else -> unchanged++
                 // tie-break: keep local
             }
         }
 
+        AppLogger.i(TAG, "Merge done: +$added new, ~$updated updated, =$unchanged unchanged")
+
         val merged = localTasks.values.toList()
         taskRepository.upsertTasks(merged)
         return merged
+    }
+
+    companion object {
+        private const val TAG = "MergeTasksUseCase"
     }
 }

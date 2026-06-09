@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import com.familytasks.app.core.AppLogger
 import com.familytasks.app.core.DeviceIdManager
 import com.familytasks.app.core.PreferencesManager
 import com.familytasks.app.domain.usecase.SyncUseCase
@@ -22,7 +23,11 @@ class SyncWorker @AssistedInject constructor(
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
-        val peerIp = syncManager.peerIp.value ?: return Result.success()
+        val peerIp = syncManager.peerIp.value ?: run {
+            AppLogger.d(TAG, "WorkManager sync: no peer IP, skipped")
+            return Result.success()
+        }
+        AppLogger.i(TAG, "WorkManager sync triggered → $peerIp")
         return try {
             val localTasks = syncUseCase.getLocalSnapshot()
             val localDevices = syncUseCase.getLocalDevices()
@@ -41,9 +46,15 @@ class SyncWorker @AssistedInject constructor(
                 prefs.lastSyncAt = now
                 syncManager.setLastSyncAt(now)
             }
+            AppLogger.i(TAG, "WorkManager sync: success")
             Result.success()
         } catch (e: Exception) {
+            AppLogger.w(TAG, "WorkManager sync: error, will retry — ${e.message}")
             Result.retry()
         }
+    }
+
+    companion object {
+        private const val TAG = "SyncWorker"
     }
 }
