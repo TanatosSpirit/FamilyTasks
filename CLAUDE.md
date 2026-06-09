@@ -60,7 +60,7 @@ data/
   local/         ← Room: TaskEntity, DeviceEntity, TaskDao, DeviceDao, AppDatabase
   repository/    ← TaskRepositoryImpl, DeviceRepositoryImpl
   sync/          ← HttpServer, HttpClient, UdpDiscovery, SyncService,
-                    SyncWorker, SyncManager, BootReceiver
+                    SyncManager, BootReceiver
 
 notifications/   ← NotificationScheduler, DueNotificationWorker
 core/            ← DeviceIdManager, PreferencesManager, AppLogger
@@ -90,8 +90,8 @@ WiFi подключилось
            POST /sync  ←── входящий запрос от партнёра
            └─ MergeTasksUseCase → ответ с локальными задачами
 
-WorkManager периодически каждые 5 минут:
-  SyncWorker → httpClient.sync(peerIp) → MergeTasksUseCase
+Задача изменилась (debounce 3 сек):
+  observeTaskChanges() → triggerSync()
 ```
 
 ---
