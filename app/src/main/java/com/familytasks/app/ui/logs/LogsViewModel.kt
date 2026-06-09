@@ -21,7 +21,8 @@ class LogsViewModel @Inject constructor() : ViewModel() {
     val filter: StateFlow<LogLevel?> = _filter.asStateFlow()
 
     val entries: StateFlow<List<LogEntry>> = combine(AppLogger.entries, _filter) { all, level ->
-        if (level == null) all else all.filter { it.level == level }
+        val filtered = if (level == null) all else all.filter { it.level == level }
+        filtered.asReversed()
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun toggleFilter(level: LogLevel) {
