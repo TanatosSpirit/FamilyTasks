@@ -80,11 +80,17 @@ ui/
 
 ```
 WiFi подключилось
-  └─ wifiReceiver (динамический, внутри SyncService) → udpDiscovery.restartDiscovery()
+  └─ wifiReceiver → udpDiscovery.restartDiscovery(resetCycle=true)
        │
        ├─ UdpDiscovery  ─── burst 5 пакетов, затем backoff: 30 сек → 5 мин → 15 мин
-       │   (получен ответ)  └─ SyncManager.setPeerIp(ip)
-       │                        └─ triggerSync()
+       │   (получен ответ)  └─ onPeerDiscovered() [ровно один раз — peerDiscovered flag]
+       │                        └─ SyncManager.setPeerIp(ip) → triggerSync()
+       │                             │
+       │                             ├─ Sync OK → lastSyncAt обновлён
+       │                             └─ PeerUnreachableException (HTTP timeout)
+       │                                  └─ peerIp = null
+       │                                     restartDiscovery(resetCycle=false)
+       │                                          └─ burst → ответ партнёра → triggerSync()
        │
        └─ HttpServer :8080
            POST /sync  ←── входящий запрос от партнёра
@@ -211,7 +217,7 @@ CAMERA                        ← для сканирования QR
 - **UDP broadcast**: может быть заблокирован в корпоративных сетях. Для домашней сети не актуально. Fallback — ручной ввод IP в настройках (не реализован, добавить при необходимости).
 - **Два устройства**: архитектура рассчитана строго на два. Третье потребует изменения логики sync и UI.
 - **Фоновая работа**: `SyncService` как Foreground Service — единственный надёжный способ держать HTTP-сервер и UDP-листенер живыми.
-- **UDP backoff**: при подключении к WiFi `SyncService` сразу запускает burst (5 UDP-пакетов с паузой 1.5 сек). Если партнёр не ответил — backoff: 30 сек × 4 цикла, затем 5 мин × 6 циклов, затем 15 мин. Резервный триггер — WorkManager каждые 5 мин.
+- **UDP backoff**: при подключении к WiFi `SyncService` сразу запускает burst (5 UDP-пакетов с паузой 1.5 сек). Если партнёр не ответил — backoff: 30 сек × 4 цикла, затем 5 мин × 6 циклов, затем 15 мин. Резервный триггер — WorkManager каждые 5 мин. При HTTP timeout backoff **не сбрасывается** — `restartDiscovery(resetCycle=false)` продолжает с текущей фазы. Сброс (`resetCycle=true`) только при переподключении WiFi.
 
 ---
 
@@ -240,6 +246,17 @@ CAMERA                        ← для сканирования QR
 ### triggerSync — защита от параллельных вызовов
 
 `triggerSync()` проверяет `syncState == SYNCING` и возвращается без действий, если синхронизация уже идёт. Оба устройства делают UDP-broadcast одновременно — без этой защиты возникает гонка состояний.
+
+### PeerUnreachableException — recovery без дедлока
+
+При `PeerUnreachableException` в `triggerSync()` (HTTP timeout) важно вызвать `udpDiscovery?.restartDiscovery(scope, resetCycle = false)` **сразу после** очистки `peerIp`. Без этого возникает дедлок: `peerIp = null`, `broadcastJob` паузнут ещё до sync, discovery молчит — выйти можно только переподключив WiFi.
+
+### UdpDiscovery — состояние между перезапусками
+
+`cycleCount` и `peerDiscovered` — `@Volatile` поля класса, не локальные переменные.
+
+- **`peerDiscovered`**: предотвращает повторные вызовы `onPeerDiscovered` при получении нескольких UDP-ответов за один burst. `sendBroadcast()` при этом вызывается на каждый пакет — это нужно, чтобы партнёр мог узнать наш IP при переподключении. Сбрасывается только в `restartDiscovery()`.
+- **`cycleCount`**: сохраняет фазу backoff между перезапусками. `restartDiscovery(resetCycle=true)` сбрасывает его в 0 (WiFi reconnect — ищем быстро); `resetCycle=false` сохраняет (HTTP failure — не спамим).
 
 ### AppLogger — встроенный лог-вьюер
 
@@ -271,3 +288,4 @@ AppLogger.e(TAG, "ошибка", throwable)
 | `Cancel notifications for task ...` | `NotificationScheduler` | D | Отмена будильника WorkManager |
 | `triggerSync skipped — no peer IP` | `SyncService` | D | Бесполезная работа (дебаунс сработал, но пира нет) |
 | `triggerSync skipped — already syncing` | `SyncService` | D | Конкурентные вызовы sync |
+| `Peer unreachable: ... — clearing IP, restarting discovery` | `SyncService` | W | HTTP timeout: IP очищен, discovery перезапущен с сохранённым backoff |

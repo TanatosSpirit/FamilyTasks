@@ -38,6 +38,7 @@ class UdpDiscovery(
     private var multicastLock: WifiManager.MulticastLock? = null
     private var listenSocket: DatagramSocket? = null
     @Volatile private var cycleCount = 0
+    @Volatile private var peerDiscovered = false
 
     fun start(scope: CoroutineScope) {
         acquireLock()
@@ -62,6 +63,7 @@ class UdpDiscovery(
 
     // resetCycle=true for WiFi reconnect (start fresh); false after HTTP failure (preserve backoff)
     fun restartDiscovery(scope: CoroutineScope, resetCycle: Boolean = true) {
+        peerDiscovered = false
         broadcastJob?.cancel()
         startBurst(scope, resetCycle)
     }
@@ -128,7 +130,10 @@ class UdpDiscovery(
                     ) {
                         AppLogger.i(TAG, "UDP packet from $senderIp (${discovery.deviceId.take(8)})")
                         sendBroadcast() // respond so peer learns our IP
-                        onPeerDiscovered(senderIp, discovery.deviceId)
+                        if (!peerDiscovered) {
+                            peerDiscovered = true
+                            onPeerDiscovered(senderIp, discovery.deviceId)
+                        }
                     }
                 } catch (_: Exception) {}
             }

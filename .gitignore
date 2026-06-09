@@ -25,3 +25,4 @@ app/src/main/assets/WebViewAssetLoader/
 app/google-services.json
 
 /chats
+/logs
