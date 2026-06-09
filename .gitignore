@@ -23,3 +23,5 @@ captures/
 # Generated
 app/src/main/assets/WebViewAssetLoader/
 app/google-services.json
+
+/chats

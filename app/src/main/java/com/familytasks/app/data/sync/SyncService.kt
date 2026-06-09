@@ -171,7 +171,7 @@ class SyncService : Service() {
             } catch (e: PeerUnreachableException) {
                 syncManager.setPeerIp(null)
                 syncManager.setSyncState(SyncState.ERROR)
-                udpDiscovery?.restartDiscovery(scope)
+                // Б ушёл из сети — его обязанность объявить о себе по возвращению через UDP burst
             } catch (e: Exception) {
                 syncManager.setSyncState(SyncState.ERROR)
             }

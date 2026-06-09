@@ -18,7 +18,9 @@ private const val UDP_PORT = 9090
 private const val BROADCAST_ADDRESS = "255.255.255.255"
 private const val BURST_COUNT = 5
 private const val BURST_INTERVAL_MS = 1_500L
-private const val BURST_RETRY_INTERVAL_MS = 30_000L
+private const val BURST_PAUSE_FAST_MS = 30_000L    // cycles 1–4  (~2 min)
+private const val BURST_PAUSE_MEDIUM_MS = 300_000L // cycles 5–10 (~25 min)
+private const val BURST_PAUSE_SLOW_MS = 900_000L   // cycles 11+  (15 min)
 
 @Serializable
 data class DiscoveryPacket(val deviceId: String, val httpPort: Int)
@@ -55,7 +57,7 @@ class UdpDiscovery(
         broadcastJob = null
     }
 
-    // Peer IP lost — send a new burst (listen socket and lock already active)
+    // Own WiFi reconnect — send a new burst with fresh backoff counter
     fun restartDiscovery(scope: CoroutineScope) {
         broadcastJob?.cancel()
         startBurst(scope)
@@ -76,13 +78,20 @@ class UdpDiscovery(
 
     private fun startBurst(scope: CoroutineScope) {
         broadcastJob = scope.launch(Dispatchers.IO) {
+            var cycleCount = 0
             while (isActive) {
                 repeat(BURST_COUNT) {
                     if (!isActive) return@launch
                     sendBroadcast()
                     delay(BURST_INTERVAL_MS)
                 }
-                delay(BURST_RETRY_INTERVAL_MS)
+                cycleCount++
+                val pause = when {
+                    cycleCount <= 4 -> BURST_PAUSE_FAST_MS
+                    cycleCount <= 10 -> BURST_PAUSE_MEDIUM_MS
+                    else -> BURST_PAUSE_SLOW_MS
+                }
+                delay(pause)
             }
         }
     }

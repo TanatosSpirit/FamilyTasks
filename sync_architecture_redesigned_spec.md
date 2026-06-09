@@ -53,10 +53,10 @@ syncState: IDLE      → ничего не происходит
 
 ### Запуск discovery
 
-При старте `SyncService` (или при потере `peerIp`):
+При старте `SyncService` (собственный WiFi connect):
 1. Захватить `MulticastLock` — разрешает WiFi-чипу пропускать broadcast-пакеты в CPU
 2. Открыть `DatagramSocket` на UDP порту `9090` — начать слушать
-3. Запустить `broadcastJob`: отправить **5 UDP-пакетов** с интервалом **1.5с**, затем ждать **30с**, затем снова 5 пакетов — цикл до обнаружения партнёра
+3. Запустить `broadcastJob` с прогрессивным backoff: **5 UDP-пакетов** с интервалом **1.5с**, затем пауза (30с → 5 мин → 15 мин), затем снова 5 пакетов — цикл до обнаружения партнёра
 4. Listen-корутина работает параллельно и независимо от broadcast-цикла
 
 ### Формат UDP-пакета
@@ -82,18 +82,24 @@ syncState: IDLE      → ничего не происходит
 | Broadcast-адрес | 255.255.255.255 |
 | Количество пакетов в burst | 5 |
 | Интервал между пакетами | 1.5 секунды |
-| Пауза между повторными burst | 30 секунд |
-| Максимальная задержка обнаружения | ~30 секунд |
+| Пауза (циклы 1–4) | 30 секунд |
+| Пауза (циклы 5–10) | 5 минут |
+| Пауза (циклы 11+) | 15 минут |
+| Максимальная задержка обнаружения | ~30 секунд (в течение первых ~2 мин) |
 | Фильтрация входящих | только от `pairedDeviceId` |
+
+### Принцип ответственности за burst
+
+Burst запускается только при **собственном** возвращении в сеть. Если партнёр ушёл (`PeerUnreachableException`) — ждём его UDP burst с открытым listen-сокетом, своего burst не шлём.
 
 ### MulticastLock — жизненный цикл
 
 ```
 SyncService.onCreate()     → acquireLock() + startListening() + burst
 onPeerDiscovered()         → pauseDiscovery() = только останавливает burst
-PeerUnreachableException   → restartDiscovery() = только шлёт новый burst
+PeerUnreachableException   → setPeerIp(null), без burst (партнёр ушёл — его ответственность)
 WiFi disconnect            → pauseDiscovery() = останавливает burst
-WiFi connect               → restartDiscovery() = новый burst
+WiFi connect               → restartDiscovery() = новый burst со сброшенным backoff
 SyncService.onDestroy()    → stop() → releaseLock()
 ```
 
@@ -134,7 +140,7 @@ SyncService.onDestroy()    → stop() → releaseLock()
    └── PeerUnreachableException (timeout / ConnectException) →
          syncManager.setPeerIp(null)
          syncState = ERROR
-         udpDiscovery.restartDiscovery()  ← перейти к фазе 1
+         // без restartDiscovery — ждём burst от партнёра
 ```
 
 ### Формат запроса/ответа (POST /sync)
@@ -274,8 +280,8 @@ Flow<List<Task>>
      │  PeerUnreachableException
      │  setPeerIp(null)
      │  syncState = ERROR
-     │  restartDiscovery() → новый burst-цикл
-     │  ... ждём UDP от партнёра (burst каждые 30с) ...
+     │  [burst не запускаем — ждём UDP от партнёра]
+     │  ... партнёр вернётся и пришлёт свой burst ...
 ```
 
 ### Партнёр вернулся в сеть
@@ -318,7 +324,9 @@ Flow<List<Task>>
 | UDP порт | 9090 | `UdpDiscovery.kt` |
 | UDP burst, количество пакетов | 5 | `UdpDiscovery.kt` |
 | UDP burst, интервал между пакетами | 1 500 мс | `UdpDiscovery.kt` |
-| UDP burst, пауза между повторами | 30 000 мс | `UdpDiscovery.kt` |
+| UDP burst, пауза (циклы 1–4) | 30 000 мс | `UdpDiscovery.kt` |
+| UDP burst, пауза (циклы 5–10) | 300 000 мс | `UdpDiscovery.kt` |
+| UDP burst, пауза (циклы 11+) | 900 000 мс | `UdpDiscovery.kt` |
 | HTTP порт | 8080 | `HttpServer.kt`, `HttpClient.kt` |
 | HTTP connect timeout | 5 000 мс | `HttpClient.kt` |
 | HTTP read timeout | 10 000 мс | `HttpClient.kt` |

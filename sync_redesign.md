@@ -29,15 +29,32 @@
 
 **Было:** `startBroadcasting()` — бесконечный цикл каждые 30с.
 
-**Стало:** `startBurst()` — 5 пакетов с интервалом 1.5с, затем корутина завершается.
+**Стало:** `startBurst()` — 5 пакетов с интервалом 1.5с, затем пауза, затем снова.
 
 При получении пакета от партнёра — **сначала отвечаем своим пакетом** (иначе партнёр не узнает наш IP), затем вызываем `onPeerDiscovered`.
 
 Новые методы:
 - `pauseDiscovery()` — останавливает только broadcastJob (listen-сокет и lock не трогаются)
-- `restartDiscovery(scope)` — шлёт новый burst (listen уже жив, lock уже держится)
+- `restartDiscovery(scope)` — шлёт новый burst со сбросом backoff-счётчика (listen уже жив, lock уже держится)
 
-`startBurst()` работает в цикле: **5 пакетов → пауза 30с → снова 5 пакетов** — до тех пор пока `pauseDiscovery()` не отменит `broadcastJob`. Это решает проблему когда Android убивает сервис: после перезапуска burst повторяется каждые 30с и гарантированно попадает в окно когда второй сервис тоже жив.
+`startBurst()` работает в цикле с прогрессивным backoff: **5 пакетов → пауза → снова 5 пакетов**. Пауза увеличивается по мере того как партнёр не отвечает:
+
+| Цикл | Пауза | Итого с начала |
+|---|---|---|
+| 1–4 | 30 сек | ~2 мин |
+| 5–10 | 5 мин | ~32 мин |
+| 11+ | 15 мин | бесконечно |
+
+Счётчик `cycleCount` — локальная переменная корутины. Сбрасывается автоматически при `restartDiscovery()`, т.к. создаётся новая корутина.
+
+### Принцип ответственности за burst
+
+**Кто ушёл из сети — тот и объявляет о себе по возвращению.**
+
+- Собственный WiFi reconnect → `restartDiscovery()` → burst (мы ушли и вернулись)
+- `PeerUnreachableException` → только `setPeerIp(null)`, **без burst** → ждём UDP от партнёра
+
+Партнёр, вернувшись в сеть, запустит свой burst. Наш listen-сокет открыт всегда — мы его услышим немедленно вне зависимости от фазы backoff.
 
 MulticastLock держится **всё время жизни SyncService**. Освобождается только в `stop()`.
 
@@ -52,7 +69,7 @@ MulticastLock держится **всё время жизни SyncService**. О�
 **`onPeerDiscovered` callback:** после `syncManager.setPeerIp(ip)` — вызывает `udpDiscovery.pauseDiscovery()`. Останавливает только burst, listen-сокет и lock остаются активными.
 
 **`triggerSync()`:** различает два типа ошибок:
-- `PeerUnreachableException` → `syncManager.setPeerIp(null)` + `udpDiscovery.restartDiscovery(scope)` + `ERROR`
+- `PeerUnreachableException` → `syncManager.setPeerIp(null)` + `ERROR` (без restartDiscovery — партнёр ушёл, его обязанность объявить о себе)
 - Прочие исключения → только `ERROR`, `peerIp` не сбрасывается
 
 **`observeTaskChanges()`:** подписка на `taskRepository.observeAllTasks()` с `drop(1)` + `distinctUntilChanged()` + `debounce(3_000L)` → `triggerSync()`. Начальная эмиссия при старте пропускается (`drop(1)`).
@@ -89,6 +106,10 @@ Debounce реализован в `SyncService.observeTaskChanges()`. Менят�
 | WorkManager wake-up | ~96 раз/сутки | 0 | **−100%** |
 | DatagramSocket создание/закрытие | каждые 30с | только burst | **−99%** |
 | HTTP sync | по polling | только при изменении задачи | зависит от активности |
+
+**Backoff при длительном отсутствии партнёра:** если партнёр не отвечает, burst-интервал растёт 30с → 5 мин → 15 мин. При отсутствии партнёра 5 часов: ~28 циклов вместо 600 без backoff.
+
+**Принцип ответственности:** `PeerUnreachableException` больше не запускает burst на нашей стороне — партнёр ушёл сам и сам объявит о себе по возвращению. Если мы тоже уходили — запускаем burst при своём WiFi reconnect с backoff.
 
 ---
 
