@@ -56,9 +56,11 @@ class SyncService : Service() {
             ) ?: return
             when {
                 info.isConnected -> {
-                    AppLogger.i(TAG, "WiFi connected — restarting discovery")
                     if (syncManager.peerIp.value == null) {
+                        AppLogger.i(TAG, "WiFi connected — restarting discovery")
                         udpDiscovery?.restartDiscovery(scope)
+                    } else {
+                        AppLogger.i(TAG, "WiFi connected — peer IP retained, skipping discovery")
                     }
                 }
                 !info.isConnectedOrConnecting -> {
