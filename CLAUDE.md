@@ -60,7 +60,7 @@ data/
   local/         ← Room: TaskEntity, DeviceEntity, TaskDao, DeviceDao, AppDatabase
   repository/    ← TaskRepositoryImpl, DeviceRepositoryImpl
   sync/          ← HttpServer, HttpClient, UdpDiscovery, SyncService,
-                    SyncWorker, SyncManager, BootReceiver, WifiReceiver
+                    SyncWorker, SyncManager, BootReceiver
 
 notifications/   ← NotificationScheduler, DueNotificationWorker
 core/            ← DeviceIdManager, PreferencesManager
@@ -79,9 +79,9 @@ ui/
 
 ```
 WiFi подключилось
-  └─ WifiReceiver → SyncService.ACTION_SYNC_NOW
+  └─ wifiReceiver (динамический, внутри SyncService) → udpDiscovery.restartDiscovery()
        │
-       ├─ UdpDiscovery  ─── broadcast 255.255.255.255:9090 каждые 30 сек
+       ├─ UdpDiscovery  ─── burst 5 пакетов, затем backoff: 30 сек → 5 мин → 15 мин
        │   (получен ответ)  └─ SyncManager.setPeerIp(ip)
        │                        └─ triggerSync()
        │
@@ -209,7 +209,7 @@ CAMERA                        ← для сканирования QR
 - **UDP broadcast**: может быть заблокирован в корпоративных сетях. Для домашней сети не актуально. Fallback — ручной ввод IP в настройках (не реализован, добавить при необходимости).
 - **Два устройства**: архитектура рассчитана строго на два. Третье потребует изменения логики sync и UI.
 - **Фоновая работа**: `SyncService` как Foreground Service — единственный надёжный способ держать HTTP-сервер и UDP-листенер живыми.
-- **WifiReceiver не работает на Android 8+**: `WIFI_STATE_CHANGED` входит в список implicit broadcasts, которые Android 8+ не доставляет ресиверам из манифеста. Триггер синхронизации при смене WiFi фактически не срабатывает — полагаемся на UDP-цикл (30 сек) и WorkManager (5 мин).
+- **UDP backoff**: при подключении к WiFi `SyncService` сразу запускает burst (5 UDP-пакетов с паузой 1.5 сек). Если партнёр не ответил — backoff: 30 сек × 4 цикла, затем 5 мин × 6 циклов, затем 15 мин. Резервный триггер — WorkManager каждые 5 мин.
 
 ---
 

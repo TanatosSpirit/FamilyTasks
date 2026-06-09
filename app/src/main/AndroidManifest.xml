@@ -52,15 +52,6 @@
             </intent-filter>
         </receiver>
 
-        <receiver
-            android:name=".data.sync.WifiReceiver"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="android.net.wifi.WIFI_STATE_CHANGED" />
-                <action android:name="android.net.wifi.STATE_CHANGE" />
-            </intent-filter>
-        </receiver>
-
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
