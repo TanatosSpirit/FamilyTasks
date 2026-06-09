@@ -1,5 +1,6 @@
 package com.familytasks.app.ui.logs
 
+import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -13,6 +14,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -25,6 +27,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
@@ -47,6 +50,7 @@ fun LogsScreen(
     val entries by vm.entries.collectAsStateWithLifecycle()
     val filter by vm.filter.collectAsStateWithLifecycle()
     val listState = rememberLazyListState()
+    val context = LocalContext.current
 
     Scaffold(
         topBar = {
@@ -58,6 +62,11 @@ fun LogsScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = {
+                        context.startActivity(Intent.createChooser(vm.buildShareIntent(context), "Отправить логи"))
+                    }) {
+                        Icon(Icons.Default.Share, "Поделиться")
+                    }
                     IconButton(onClick = vm::clearLogs) {
                         Icon(Icons.Default.Delete, "Очистить")
                     }

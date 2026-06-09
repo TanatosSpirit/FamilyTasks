@@ -1,5 +1,9 @@
 package com.familytasks.app.ui.logs
 
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import androidx.core.content.FileProvider
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.familytasks.app.core.AppLogger
@@ -12,6 +16,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import javax.inject.Inject
 
 @HiltViewModel
@@ -30,4 +38,24 @@ class LogsViewModel @Inject constructor() : ViewModel() {
     }
 
     fun clearLogs() = AppLogger.clear()
+
+    fun buildShareIntent(context: Context): Intent {
+        val timeFmt = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+        val text = AppLogger.entries.value
+            .asReversed()
+            .joinToString("\n") { e ->
+                "${timeFmt.format(Date(e.time))}  ${e.level.name}  ${e.tag.padEnd(14)}  ${e.message}"
+            }
+
+        val logsDir = File(context.cacheDir, "logs").apply { mkdirs() }
+        val file = File(logsDir, "familytasks_log.txt").apply { writeText(text) }
+        val uri: Uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+
+        return Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            putExtra(Intent.EXTRA_SUBJECT, "FamilyTasks логи синхронизации")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+    }
 }
