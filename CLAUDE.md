@@ -80,7 +80,8 @@ ui/
 
 ```
 WiFi подключилось
-  └─ wifiReceiver → udpDiscovery.restartDiscovery(resetCycle=true)
+  └─ wifiReceiver → если peerIp == null → udpDiscovery.restartDiscovery(resetCycle=true)
+                    если peerIp != null → пропускается (IP сохранён; типично при mesh-роуминге)
        │
        ├─ UdpDiscovery  ─── burst 5 пакетов, затем backoff: 30 сек → 5 мин → 15 мин
        │   (получен ответ)  └─ onPeerDiscovered() [ровно один раз — peerDiscovered flag]
@@ -282,7 +283,9 @@ AppLogger.e(TAG, "ошибка", throwable)
 | `MulticastLock acquired/released` | `UdpDiscovery` | I | Время удержания лока — прямой расход заряда WiFi-чипа |
 | `Burst cycle N — next in Xs` | `UdpDiscovery` | D | Переход между фазами backoff (30с → 5мин → 15мин) |
 | `UDP broadcast paused — peer found` | `UdpDiscovery` | I | Момент, когда радио перестаёт слать burst'ы |
-| `WiFi connected/disconnected` | `SyncService` | I | Изменение состояния сети |
+| `WiFi connected — restarting discovery` | `SyncService` | I | peerIp был null → discovery реально запущен |
+| `WiFi connected — peer IP retained, skipping discovery` | `SyncService` | I | peerIp уже есть (mesh-роуминг между AP с одним SSID) — discovery не трогаем |
+| `WiFi disconnected — clearing peer IP` | `SyncService` | I | Потеря сети → IP очищен |
 | `Boot completed — starting SyncService` | `BootReceiver` | I | Холодный старт по загрузке системы |
 | `Schedule notification [tag] in Nm` | `NotificationScheduler` | D | Выставление будильника через WorkManager |
 | `Cancel notifications for task ...` | `NotificationScheduler` | D | Отмена будильника WorkManager |
