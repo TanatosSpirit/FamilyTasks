@@ -37,11 +37,12 @@ class UdpDiscovery(
     private var listenJob: Job? = null
     private var multicastLock: WifiManager.MulticastLock? = null
     private var listenSocket: DatagramSocket? = null
+    @Volatile private var cycleCount = 0
 
     fun start(scope: CoroutineScope) {
         acquireLock()
         startListening(scope)
-        startBurst(scope)
+        startBurst(scope, resetCycle = true)
     }
 
     fun stop() {
@@ -59,10 +60,10 @@ class UdpDiscovery(
         broadcastJob = null
     }
 
-    // Own WiFi reconnect — send a new burst with fresh backoff counter
-    fun restartDiscovery(scope: CoroutineScope) {
+    // resetCycle=true for WiFi reconnect (start fresh); false after HTTP failure (preserve backoff)
+    fun restartDiscovery(scope: CoroutineScope, resetCycle: Boolean = true) {
         broadcastJob?.cancel()
-        startBurst(scope)
+        startBurst(scope, resetCycle)
     }
 
     private fun acquireLock() {
@@ -82,9 +83,9 @@ class UdpDiscovery(
         multicastLock = null
     }
 
-    private fun startBurst(scope: CoroutineScope) {
+    private fun startBurst(scope: CoroutineScope, resetCycle: Boolean) {
+        if (resetCycle) cycleCount = 0
         broadcastJob = scope.launch(Dispatchers.IO) {
-            var cycleCount = 0
             while (isActive) {
                 repeat(BURST_COUNT) {
                     if (!isActive) return@launch

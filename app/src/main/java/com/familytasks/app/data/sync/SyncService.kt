@@ -185,10 +185,10 @@ class SyncService : Service() {
                     AppLogger.w(TAG, "Sync failed: null response from $peerIp")
                 }
             } catch (e: PeerUnreachableException) {
-                AppLogger.w(TAG, "Peer unreachable: $peerIp — clearing IP")
+                AppLogger.w(TAG, "Peer unreachable: $peerIp — clearing IP, restarting discovery")
                 syncManager.setPeerIp(null)
                 syncManager.setSyncState(SyncState.ERROR)
-                // Б ушёл из сети — его обязанность объявить о себе по возвращению через UDP burst
+                udpDiscovery?.restartDiscovery(scope, resetCycle = false)
             } catch (e: Exception) {
                 AppLogger.e(TAG, "Sync error: ${e.message}", e)
                 syncManager.setSyncState(SyncState.ERROR)
