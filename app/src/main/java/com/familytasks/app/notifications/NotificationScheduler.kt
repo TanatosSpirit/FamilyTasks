@@ -4,6 +4,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import androidx.core.app.NotificationCompat
+import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.workDataOf
@@ -70,13 +71,18 @@ class NotificationScheduler @Inject constructor(
         showNotification(CH_STATUS, task.id.hashCode() + 1000, "Задача $statusLabel", task.title)
     }
 
+    fun cancelDueNotifications(taskId: String) {
+        val wm = WorkManager.getInstance(context)
+        wm.cancelUniqueWork(taskId + "_day")
+        wm.cancelUniqueWork(taskId + "_hour")
+    }
+
     private fun scheduleNotificationWorker(tag: String, title: String, text: String, delayMs: Long) {
         val request = OneTimeWorkRequestBuilder<DueNotificationWorker>()
             .setInitialDelay(delayMs, TimeUnit.MILLISECONDS)
             .setInputData(workDataOf("title" to title, "text" to text))
-            .addTag(tag)
             .build()
-        WorkManager.getInstance(context).enqueue(request)
+        WorkManager.getInstance(context).enqueueUniqueWork(tag, ExistingWorkPolicy.REPLACE, request)
     }
 
     private fun showNotification(channel: String, id: Int, title: String, text: String) {
