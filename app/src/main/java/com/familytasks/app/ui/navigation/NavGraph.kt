@@ -12,6 +12,7 @@ import androidx.navigation.navArgument
 import com.familytasks.app.core.PreferencesManager
 import com.familytasks.app.ui.onboarding.OnboardingScreen
 import com.familytasks.app.ui.onboarding.QrCodeScreen
+import com.familytasks.app.ui.logs.LogsScreen
 import com.familytasks.app.ui.settings.SettingsScreen
 import com.familytasks.app.ui.tasks.CreateTaskScreen
 import com.familytasks.app.ui.tasks.TaskDetailScreen
@@ -66,8 +67,12 @@ fun NavGraph(prefs: PreferencesManager) {
         composable(Screen.Settings.route) {
             SettingsScreen(
                 onBack = { navController.popBackStack() },
-                onPairDevice = { navController.navigate(Screen.QrCode.route) }
+                onPairDevice = { navController.navigate(Screen.QrCode.route) },
+                onLogs = { navController.navigate(Screen.Logs.route) }
             )
+        }
+        composable(Screen.Logs.route) {
+            LogsScreen(onBack = { navController.popBackStack() })
         }
     }
 }

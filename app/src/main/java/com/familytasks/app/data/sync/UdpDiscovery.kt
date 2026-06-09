@@ -1,6 +1,7 @@
 package com.familytasks.app.data.sync
 
 import android.net.wifi.WifiManager
+import com.familytasks.app.core.AppLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -99,8 +100,14 @@ class UdpDiscovery(
     private fun startListening(scope: CoroutineScope) {
         listenJob = scope.launch(Dispatchers.IO) {
             val socket = try {
-                DatagramSocket(UDP_PORT).also { listenSocket = it }
-            } catch (_: Exception) { return@launch }
+                DatagramSocket(UDP_PORT).also {
+                    listenSocket = it
+                    AppLogger.i(TAG, "UDP listening on port $UDP_PORT")
+                }
+            } catch (e: Exception) {
+                AppLogger.e(TAG, "UDP socket failed: ${e.message}", e)
+                return@launch
+            }
             val buffer = ByteArray(1024)
             while (isActive) {
                 try {
@@ -112,6 +119,7 @@ class UdpDiscovery(
                     if (discovery.deviceId != ownDeviceId &&
                         (pairedDeviceId == null || discovery.deviceId == pairedDeviceId)
                     ) {
+                        AppLogger.i(TAG, "UDP packet from $senderIp (${discovery.deviceId.take(8)})")
                         sendBroadcast() // respond so peer learns our IP
                         onPeerDiscovered(senderIp, discovery.deviceId)
                     }
@@ -129,6 +137,13 @@ class UdpDiscovery(
                 socket.broadcast = true
                 socket.send(DatagramPacket(data, data.size, address, UDP_PORT))
             }
-        } catch (_: Exception) {}
+            AppLogger.d(TAG, "UDP broadcast sent → $BROADCAST_ADDRESS:$UDP_PORT")
+        } catch (e: Exception) {
+            AppLogger.e(TAG, "UDP broadcast failed: ${e.message}", e)
+        }
+    }
+
+    companion object {
+        private const val TAG = "UdpDiscovery"
     }
 }

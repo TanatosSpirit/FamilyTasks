@@ -9,4 +9,5 @@ sealed class Screen(val route: String) {
     data class TaskDetail(val taskId: String = "{taskId}") : Screen("task_detail/{taskId}") {
         fun createRoute(id: String) = "task_detail/$id"
     }
+    data object Logs : Screen("logs")
 }

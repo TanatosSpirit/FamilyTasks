@@ -16,6 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -42,6 +43,7 @@ import java.util.Locale
 fun SettingsScreen(
     onBack: () -> Unit,
     onPairDevice: () -> Unit,
+    onLogs: () -> Unit = {},
     vm: SettingsViewModel = hiltViewModel()
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
@@ -108,6 +110,11 @@ fun SettingsScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+            HorizontalDivider()
+            Text("Диагностика", style = MaterialTheme.typography.titleMedium)
+            OutlinedButton(onClick = onLogs, modifier = Modifier.fillMaxWidth()) {
+                Text("Логи синхронизации")
             }
             HorizontalDivider()
             Text("Уведомления", style = MaterialTheme.typography.titleMedium)

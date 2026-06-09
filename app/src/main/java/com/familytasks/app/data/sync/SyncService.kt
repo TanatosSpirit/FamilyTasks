@@ -21,6 +21,7 @@ import com.familytasks.app.domain.repository.DeviceRepository
 import com.familytasks.app.domain.repository.TaskRepository
 import com.familytasks.app.domain.usecase.SyncUseCase
 import com.familytasks.app.notifications.NotificationScheduler
+import com.familytasks.app.core.AppLogger
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -71,6 +72,7 @@ class SyncService : Service() {
         super.onCreate()
         createNotificationChannel()
         startForegroundCompat()
+        AppLogger.i(TAG, "Service started")
         startHttpServer()
         startUdpDiscovery()
         observeTaskChanges()
@@ -88,12 +90,14 @@ class SyncService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        AppLogger.i(TAG, "Service stopped")
         unregisterReceiver(wifiReceiver)
         httpServer?.stop()
         udpDiscovery?.stop()
     }
 
     private fun startHttpServer() {
+        AppLogger.i(TAG, "HTTP server started on :8080")
         httpServer = HttpServer(8080) { incoming ->
             val localTasks = syncUseCase.getLocalSnapshot()
             val localDevices = buildDevicesPayload()
@@ -118,6 +122,7 @@ class SyncService : Service() {
             ownDeviceId = deviceIdManager.deviceId,
             pairedDeviceId = prefs.pairedDeviceId,
             onPeerDiscovered = { ip, deviceId ->
+                AppLogger.i(TAG, "Peer discovered: $ip (${deviceId.take(8)})")
                 syncManager.setPeerIp(ip)
                 udpDiscovery?.pauseDiscovery()
                 scope.launch {
@@ -146,6 +151,7 @@ class SyncService : Service() {
         val peerIp = syncManager.peerIp.value ?: return
         if (syncManager.syncState.value == SyncState.SYNCING) return
         scope.launch {
+            AppLogger.i(TAG, "triggerSync → $peerIp")
             syncManager.setSyncState(SyncState.SYNCING)
             try {
                 val localTasks = syncUseCase.getLocalSnapshot()
@@ -165,14 +171,18 @@ class SyncService : Service() {
                     prefs.lastSyncAt = now
                     syncManager.setLastSyncAt(now)
                     syncManager.setSyncState(SyncState.SUCCESS)
+                    AppLogger.i(TAG, "Sync OK: sent ${localTasks.size}, received ${response.tasks.size}")
                 } else {
                     syncManager.setSyncState(SyncState.ERROR)
+                    AppLogger.w(TAG, "Sync failed: null response from $peerIp")
                 }
             } catch (e: PeerUnreachableException) {
+                AppLogger.w(TAG, "Peer unreachable: $peerIp — clearing IP")
                 syncManager.setPeerIp(null)
                 syncManager.setSyncState(SyncState.ERROR)
                 // Б ушёл из сети — его обязанность объявить о себе по возвращению через UDP burst
             } catch (e: Exception) {
+                AppLogger.e(TAG, "Sync error: ${e.message}", e)
                 syncManager.setSyncState(SyncState.ERROR)
             }
         }
@@ -218,6 +228,7 @@ class SyncService : Service() {
     }
 
     companion object {
+        private const val TAG = "SyncService"
         const val CHANNEL_ID = "sync_service"
         const val NOTIFICATION_ID = 1
         const val ACTION_SYNC_NOW = "com.familytasks.app.SYNC_NOW"
