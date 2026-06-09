@@ -8,6 +8,7 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.workDataOf
+import com.familytasks.app.core.AppLogger
 import com.familytasks.app.core.PreferencesManager
 import com.familytasks.app.domain.model.Task
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -72,12 +73,14 @@ class NotificationScheduler @Inject constructor(
     }
 
     fun cancelDueNotifications(taskId: String) {
+        AppLogger.d(TAG, "Cancel notifications for task ${taskId.take(8)}")
         val wm = WorkManager.getInstance(context)
         wm.cancelUniqueWork(taskId + "_day")
         wm.cancelUniqueWork(taskId + "_hour")
     }
 
     private fun scheduleNotificationWorker(tag: String, title: String, text: String, delayMs: Long) {
+        AppLogger.d(TAG, "Schedule notification [$tag] in ${delayMs / 60_000}m")
         val request = OneTimeWorkRequestBuilder<DueNotificationWorker>()
             .setInitialDelay(delayMs, TimeUnit.MILLISECONDS)
             .setInputData(workDataOf("title" to title, "text" to text))
@@ -96,6 +99,7 @@ class NotificationScheduler @Inject constructor(
     }
 
     companion object {
+        private const val TAG = "NotificationScheduler"
         const val CH_DUE = "ch_due_date"
         const val CH_NEW_TASK = "ch_new_task"
         const val CH_STATUS = "ch_status"

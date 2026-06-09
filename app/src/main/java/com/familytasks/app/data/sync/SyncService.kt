@@ -150,8 +150,14 @@ class SyncService : Service() {
     }
 
     private fun triggerSync() {
-        val peerIp = syncManager.peerIp.value ?: return
-        if (syncManager.syncState.value == SyncState.SYNCING) return
+        val peerIp = syncManager.peerIp.value ?: run {
+            AppLogger.d(TAG, "triggerSync skipped — no peer IP")
+            return
+        }
+        if (syncManager.syncState.value == SyncState.SYNCING) {
+            AppLogger.d(TAG, "triggerSync skipped — already syncing")
+            return
+        }
         scope.launch {
             AppLogger.i(TAG, "triggerSync → $peerIp")
             syncManager.setSyncState(SyncState.SYNCING)

@@ -250,8 +250,24 @@ AppLogger.d(TAG, "сообщение")   // уровни: d / i / w / e
 AppLogger.e(TAG, "ошибка", throwable)
 ```
 
-Покрытые источники: `SyncService`, `SyncWorker`, `HttpClient`, `HttpServer`, `UdpDiscovery`, `MergeTasksUseCase`.
+Покрытые источники: `SyncService`, `HttpClient`, `HttpServer`, `UdpDiscovery`, `MergeTasksUseCase`, `BootReceiver`, `NotificationScheduler`.
 
 Доступ в UI: **Настройки → Диагностика → Логи синхронизации**. Там же кнопка Share — экспортирует лог в `familytasks_log.txt` через стандартный Android Share Sheet (FileProvider, `cache/logs/`).
 
 **Удаление**: удалить `core/AppLogger.kt`, `ui/logs/`, убрать `Screen.Logs` из навигации, секцию «Диагностика» из `SettingsScreen`, заменить `AppLogger.` на `Log.` в sync-файлах и `MergeTasksUseCase.kt` (Find & Replace).
+
+### Логирование энергозатратных событий
+
+Следующие события логируются специально для анализа энергопотребления:
+
+| Событие | Файл | Уровень | Что анализировать |
+|---|---|---|---|
+| `MulticastLock acquired/released` | `UdpDiscovery` | I | Время удержания лока — прямой расход заряда WiFi-чипа |
+| `Burst cycle N — next in Xs` | `UdpDiscovery` | D | Переход между фазами backoff (30с → 5мин → 15мин) |
+| `UDP broadcast paused — peer found` | `UdpDiscovery` | I | Момент, когда радио перестаёт слать burst'ы |
+| `WiFi connected/disconnected` | `SyncService` | I | Изменение состояния сети |
+| `Boot completed — starting SyncService` | `BootReceiver` | I | Холодный старт по загрузке системы |
+| `Schedule notification [tag] in Nm` | `NotificationScheduler` | D | Выставление будильника через WorkManager |
+| `Cancel notifications for task ...` | `NotificationScheduler` | D | Отмена будильника WorkManager |
+| `triggerSync skipped — no peer IP` | `SyncService` | D | Бесполезная работа (дебаунс сработал, но пира нет) |
+| `triggerSync skipped — already syncing` | `SyncService` | D | Конкурентные вызовы sync |

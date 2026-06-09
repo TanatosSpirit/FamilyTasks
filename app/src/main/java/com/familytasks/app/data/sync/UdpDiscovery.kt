@@ -54,6 +54,7 @@ class UdpDiscovery(
 
     // Peer IP is now known — stop sending, but keep listening for reconnects
     fun pauseDiscovery() {
+        AppLogger.i(TAG, "UDP broadcast paused — peer found")
         broadcastJob?.cancel()
         broadcastJob = null
     }
@@ -69,11 +70,15 @@ class UdpDiscovery(
         multicastLock = wifiManager.createMulticastLock("FamilyTasksLock").also {
             it.setReferenceCounted(false)
             it.acquire()
+            AppLogger.i(TAG, "MulticastLock acquired")
         }
     }
 
     private fun releaseLock() {
-        multicastLock?.takeIf { it.isHeld }?.release()
+        if (multicastLock?.isHeld == true) {
+            AppLogger.i(TAG, "MulticastLock released")
+            multicastLock?.release()
+        }
         multicastLock = null
     }
 
@@ -92,6 +97,7 @@ class UdpDiscovery(
                     cycleCount <= 10 -> BURST_PAUSE_MEDIUM_MS
                     else -> BURST_PAUSE_SLOW_MS
                 }
+                AppLogger.d(TAG, "Burst cycle $cycleCount — next in ${pause / 1000}s")
                 delay(pause)
             }
         }
