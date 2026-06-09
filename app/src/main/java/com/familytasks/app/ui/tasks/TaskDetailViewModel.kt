@@ -68,7 +68,11 @@ class TaskDetailViewModel @Inject constructor(
             val updated = task.copy(updatedAt = System.currentTimeMillis())
             taskRepository.upsertTask(updated)
             _task.value = updated
-            notificationScheduler.scheduleDueNotifications(updated)
+            if (updated.assignedTo == deviceIdManager.deviceId) {
+                notificationScheduler.scheduleDueNotifications(updated)
+            } else {
+                notificationScheduler.cancelDueNotifications(updated.id)
+            }
             launch(kotlinx.coroutines.Dispatchers.Main) { onDone() }
         }
     }

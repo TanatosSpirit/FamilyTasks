@@ -66,7 +66,9 @@ class CreateTaskViewModel @Inject constructor(
         )
         viewModelScope.launch {
             taskRepository.upsertTask(task)
-            notificationScheduler.scheduleDueNotifications(task)
+            if (task.assignedTo == deviceIdManager.deviceId) {
+                notificationScheduler.scheduleDueNotifications(task)
+            }
             launch(kotlinx.coroutines.Dispatchers.Main) { onDone() }
         }
     }
