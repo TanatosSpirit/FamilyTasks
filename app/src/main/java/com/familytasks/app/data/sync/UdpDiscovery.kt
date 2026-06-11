@@ -23,6 +23,12 @@ private const val BURST_PAUSE_FAST_MS = 30_000L    // cycles 1–4  (~2 min)
 private const val BURST_PAUSE_MEDIUM_MS = 300_000L // cycles 5–10 (~25 min)
 private const val BURST_PAUSE_SLOW_MS = 900_000L   // cycles 11+  (15 min)
 
+// Эксперимент: MulticastLock держит WiFi-чип вне power-save 24/7 — главный расход заряда.
+// Limited broadcast 255.255.255.255 на части устройств приходит и без лока. Проверяем «в бою»:
+// если discovery перестанет ловить пакеты (пусто во входящих логах UdpDiscovery, особенно при
+// выключенном экране) — вернуть в true. Откат — одна строка.
+private const val USE_MULTICAST_LOCK = false
+
 @Serializable
 data class DiscoveryPacket(val deviceId: String, val httpPort: Int)
 
@@ -41,7 +47,7 @@ class UdpDiscovery(
     @Volatile private var peerDiscovered = false
 
     fun start(scope: CoroutineScope) {
-        acquireLock()
+        if (USE_MULTICAST_LOCK) acquireLock()
         startListening(scope)
         startBurst(scope, resetCycle = true)
     }
