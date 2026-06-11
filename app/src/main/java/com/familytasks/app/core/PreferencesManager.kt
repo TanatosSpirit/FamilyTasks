@@ -49,6 +49,10 @@ class PreferencesManager @Inject constructor(
         get() = prefs.getBoolean(KEY_NOTIFY_STATUS, true)
         set(value) = prefs.edit().putBoolean(KEY_NOTIFY_STATUS, value).apply()
 
+    var lastKnownOwnIp: String?
+        get() = prefs.getString(KEY_LAST_OWN_IP, null)
+        set(value) = prefs.edit().putString(KEY_LAST_OWN_IP, value).apply()
+
     companion object {
         private const val KEY_DEVICE_ID = "device_id"
         private const val KEY_DISPLAY_NAME = "display_name"
@@ -59,5 +63,6 @@ class PreferencesManager @Inject constructor(
         private const val KEY_NOTIFY_DUE = "notify_due_date"
         private const val KEY_NOTIFY_NEW = "notify_new_task"
         private const val KEY_NOTIFY_STATUS = "notify_status_change"
+        private const val KEY_LAST_OWN_IP = "last_own_ip"
     }
 }

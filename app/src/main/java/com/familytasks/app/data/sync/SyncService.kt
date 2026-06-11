@@ -9,6 +9,11 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ServiceInfo
+import android.net.ConnectivityManager
+import android.net.LinkProperties
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
@@ -47,6 +52,29 @@ class SyncService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var httpServer: HttpServer? = null
     private var udpDiscovery: UdpDiscovery? = null
+    private lateinit var connectivityManager: ConnectivityManager
+
+    private val ipTrackingCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) {
+            val ip = connectivityManager.getLinkProperties(network)
+                ?.linkAddresses
+                ?.firstOrNull { it.address.hostAddress?.contains('.') == true }
+                ?.address?.hostAddress ?: return
+            AppLogger.w(TAG, "WiFi connected, IP: $ip")
+            prefs.lastKnownOwnIp = ip
+        }
+
+        override fun onLinkPropertiesChanged(network: Network, linkProperties: LinkProperties) {
+            val newIp = linkProperties.linkAddresses
+                .firstOrNull { it.address.hostAddress?.contains('.') == true }
+                ?.address?.hostAddress ?: return
+            val prevIp = prefs.lastKnownOwnIp
+            if (newIp != prevIp) {
+                AppLogger.w(TAG, "Own IP changed: $prevIp → $newIp")
+                prefs.lastKnownOwnIp = newIp
+            }
+        }
+    }
 
     @Suppress("DEPRECATION")
     private val wifiReceiver = object : BroadcastReceiver() {
@@ -77,6 +105,11 @@ class SyncService : Service() {
         createNotificationChannel()
         startForegroundCompat()
         AppLogger.i(TAG, "Service started")
+        connectivityManager = getSystemService(ConnectivityManager::class.java)
+        val request = NetworkRequest.Builder()
+            .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+            .build()
+        connectivityManager.registerNetworkCallback(request, ipTrackingCallback)
         startHttpServer()
         startUdpDiscovery()
         observeTaskChanges()
@@ -95,6 +128,7 @@ class SyncService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         AppLogger.i(TAG, "Service stopped")
+        connectivityManager.unregisterNetworkCallback(ipTrackingCallback)
         unregisterReceiver(wifiReceiver)
         httpServer?.stop()
         udpDiscovery?.stop()
