@@ -229,7 +229,7 @@ private fun TaskCard(
                     Text(
                         text = "До: ${formatDate(task.dueDate)}",
                         style = MaterialTheme.typography.labelSmall,
-                        color = dueDateColor(task.dueDate)
+                        color = dueDateColor(task.dueDate, task.status, task.completedAt)
                     )
                 }
             }
@@ -271,12 +271,20 @@ private fun priorityContainerColor(priority: Priority): androidx.compose.ui.grap
     }
 }
 
-private fun dueDateColor(dueDate: Long): Color {
-    val diff = dueDate - System.currentTimeMillis()
-    return when {
-        diff < 0 -> Color(0xFFF44336)
-        diff < 3_600_000 -> Color(0xFFFF9800)
-        else -> Color(0xFF9E9E9E)
+private fun dueDateColor(dueDate: Long, status: TaskStatus, completedAt: Long?): Color {
+    return if (status == TaskStatus.DONE) {
+        when {
+            completedAt == null -> Color(0xFF9E9E9E)
+            completedAt <= dueDate -> Color(0xFF4CAF50)
+            else -> Color(0xFFF44336)
+        }
+    } else {
+        val diff = dueDate - System.currentTimeMillis()
+        when {
+            diff < 0 -> Color(0xFFF44336)
+            diff < 3_600_000 -> Color(0xFFFF9800)
+            else -> Color(0xFF9E9E9E)
+        }
     }
 }
 

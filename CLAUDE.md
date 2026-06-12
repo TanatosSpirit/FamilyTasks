@@ -136,7 +136,7 @@ WiFi подключилось
 ```json
 {
   "deviceId": "aaa-111",
-  "tasks": [{ "id": "uuid", "title": "...", "updatedAt": 1718050000000, "deleted": false, ... }],
+  "tasks": [{ "id": "uuid", "title": "...", "updatedAt": 1718050000000, "deleted": false, "completedAt": 1718049000000, ... }],
   "devices": [{ "deviceId": "aaa-111", "displayName": "Мама", "color": -12345678 }]
 }
 ```
@@ -166,8 +166,11 @@ WiFi подключилось
 | createdAt | Long | неизменяемый |
 | updatedAt | Long | обновляется при каждом изменении |
 | deleted | Boolean | tombstone-флаг, default `false` |
+| completedAt | Long? | Unix timestamp мс момента перехода в `done`; null если статус не `done` или задача завершена до версии 2 БД |
 
 В Room enum'ы хранятся как String (`status.value`, `priority.value`). Конвертация — extension-функции `toDomain()` / `toEntity()` в `TaskEntity.kt`.
+
+**Схема БД: версия 2.** Миграция `MIGRATION_1_2` (в `AppDatabase.kt`) добавила колонку `completedAt INTEGER` (nullable). Задачи, завершённые до обновления, имеют `completedAt = null`.
 
 ### Device (SharedPreferences + Room)
 
@@ -292,8 +295,22 @@ MulticastLock удерживал WiFi-чип вне power-save режима по
 - Enum-значения хранятся как строки в Room: `"todo"`, `"in_progress"`, `"done"`, `"low"`, `"normal"`, `"high"`.
 - `updatedAt` обновляется через `System.currentTimeMillis()` при каждом изменении задачи — никогда не проставляется вручную в UI.
 - Удаление задач — только `taskRepository.deleteTask(id, updatedAt)`, который ставит `deleted = true`. Физического удаления нет.
+- `completedAt` выставляется автоматически в `TaskDetailViewModel` (`cycleStatus` и `updateTask`): при переходе в `DONE` → `System.currentTimeMillis()`, при переходе обратно — `null`. В `EditTaskContent` та же логика применяется на стороне UI перед вызовом `onSave`. Никогда не проставлять вручную.
 - StateFlow для UI-состояния, `collectAsStateWithLifecycle()` в Compose.
 - `combine` с >5 потоками: сначала сгруппировать в промежуточные data-классы (см. `TaskListViewModel`).
+
+### Цвет дедлайна в списке задач
+
+Функция `dueDateColor` в `TaskListScreen.kt` принимает `dueDate`, `status` и `completedAt`.
+
+| Условие | Цвет |
+|---|---|
+| `status != DONE`, срок истёк | красный |
+| `status != DONE`, до срока < 1 час | оранжевый |
+| `status != DONE`, до срока ≥ 1 час | серый |
+| `status == DONE`, `completedAt == null` | серый (задача из эпохи до v2) |
+| `status == DONE`, `completedAt <= dueDate` | зелёный (успели вовремя) |
+| `status == DONE`, `completedAt > dueDate` | красный (сдали с опозданием) |
 
 ### Данные об устройствах — два источника
 

@@ -143,6 +143,9 @@ private fun ViewTaskContent(
         if (task.dueDate != null) {
             InfoRow("Срок", SimpleDateFormat("dd MMM yyyy HH:mm", Locale.getDefault()).format(Date(task.dueDate)))
         }
+        if (task.completedAt != null) {
+            InfoRow("Завершена", SimpleDateFormat("dd MMM yyyy HH:mm", Locale.getDefault()).format(Date(task.completedAt)))
+        }
         val creator = devicesMap[task.createdBy]
         if (creator != null) {
             Row(verticalAlignment = Alignment.CenterVertically) {

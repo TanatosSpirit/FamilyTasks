@@ -106,12 +106,18 @@ fun EditTaskContent(
         Spacer(modifier = Modifier.height(8.dp))
         Button(
             onClick = {
+                val completedAt = when {
+                    status == TaskStatus.DONE && task.status != TaskStatus.DONE -> System.currentTimeMillis()
+                    status != TaskStatus.DONE -> null
+                    else -> task.completedAt
+                }
                 onSave(task.copy(
                     title = title.trim(),
                     description = description.trim().ifBlank { null },
                     priority = priority,
                     status = status,
-                    assignedTo = assignedTo
+                    assignedTo = assignedTo,
+                    completedAt = completedAt
                 ))
             },
             enabled = title.isNotBlank(),

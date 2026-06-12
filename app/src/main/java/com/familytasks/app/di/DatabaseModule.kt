@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Room
 import com.familytasks.app.data.local.AppDatabase
 import com.familytasks.app.data.local.DeviceDao
+import com.familytasks.app.data.local.MIGRATION_1_2
 import com.familytasks.app.data.local.TaskDao
 import dagger.Module
 import dagger.Provides
@@ -20,6 +21,7 @@ object DatabaseModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): AppDatabase =
         Room.databaseBuilder(context, AppDatabase::class.java, "family_tasks.db")
+            .addMigrations(MIGRATION_1_2)
             .fallbackToDestructiveMigration()
             .build()
 

@@ -47,12 +47,14 @@ class TaskDetailViewModel @Inject constructor(
 
     fun cycleStatus() {
         val current = _task.value ?: return
+        val now = System.currentTimeMillis()
         val next = when (current.status) {
             TaskStatus.TODO -> TaskStatus.IN_PROGRESS
             TaskStatus.IN_PROGRESS -> TaskStatus.DONE
             TaskStatus.DONE -> TaskStatus.TODO
         }
-        update(current.copy(status = next, updatedAt = System.currentTimeMillis()))
+        val completedAt = if (next == TaskStatus.DONE) now else null
+        update(current.copy(status = next, updatedAt = now, completedAt = completedAt))
     }
 
     fun delete(onDone: () -> Unit) {
@@ -65,7 +67,13 @@ class TaskDetailViewModel @Inject constructor(
 
     fun updateTask(task: Task, onDone: () -> Unit) {
         viewModelScope.launch {
-            val updated = task.copy(updatedAt = System.currentTimeMillis())
+            val now = System.currentTimeMillis()
+            val completedAt = when {
+                task.status == TaskStatus.DONE && _task.value?.status != TaskStatus.DONE -> now
+                task.status != TaskStatus.DONE -> null
+                else -> task.completedAt
+            }
+            val updated = task.copy(updatedAt = now, completedAt = completedAt)
             taskRepository.upsertTask(updated)
             _task.value = updated
             if (updated.assignedTo == deviceIdManager.deviceId) {

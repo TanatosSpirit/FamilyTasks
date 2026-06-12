@@ -25,7 +25,8 @@ data class TaskDto(
     val createdBy: String,
     val createdAt: Long,
     val updatedAt: Long,
-    val deleted: Boolean = false
+    val deleted: Boolean = false,
+    val completedAt: Long? = null
 )
 
 @Serializable
@@ -46,7 +47,8 @@ fun Task.toDto() = TaskDto(
     createdBy = createdBy,
     createdAt = createdAt,
     updatedAt = updatedAt,
-    deleted = deleted
+    deleted = deleted,
+    completedAt = completedAt
 )
 
 fun TaskDto.toDomain() = Task(
@@ -60,7 +62,8 @@ fun TaskDto.toDomain() = Task(
     createdBy = createdBy,
     createdAt = createdAt,
     updatedAt = updatedAt,
-    deleted = deleted
+    deleted = deleted,
+    completedAt = completedAt
 )
 
 fun Device.toDto() = DeviceDto(deviceId = deviceId, displayName = displayName, color = color)

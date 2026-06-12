@@ -18,7 +18,8 @@ data class TaskEntity(
     val createdBy: String,
     val createdAt: Long,
     val updatedAt: Long,
-    val deleted: Boolean
+    val deleted: Boolean,
+    val completedAt: Long? = null
 )
 
 fun TaskEntity.toDomain() = Task(
@@ -32,7 +33,8 @@ fun TaskEntity.toDomain() = Task(
     createdBy = createdBy,
     createdAt = createdAt,
     updatedAt = updatedAt,
-    deleted = deleted
+    deleted = deleted,
+    completedAt = completedAt
 )
 
 fun Task.toEntity() = TaskEntity(
@@ -46,5 +48,6 @@ fun Task.toEntity() = TaskEntity(
     createdBy = createdBy,
     createdAt = createdAt,
     updatedAt = updatedAt,
-    deleted = deleted
+    deleted = deleted,
+    completedAt = completedAt
 )
