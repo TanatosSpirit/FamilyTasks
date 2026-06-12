@@ -19,6 +19,7 @@ import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.familytasks.app.R
+import com.familytasks.app.core.AppLogger
 import com.familytasks.app.core.DeviceIdManager
 import com.familytasks.app.core.PreferencesManager
 import com.familytasks.app.domain.model.Device
@@ -26,16 +27,20 @@ import com.familytasks.app.domain.repository.DeviceRepository
 import com.familytasks.app.domain.repository.TaskRepository
 import com.familytasks.app.domain.usecase.SyncUseCase
 import com.familytasks.app.notifications.NotificationScheduler
-import com.familytasks.app.core.AppLogger
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+
+private const val KEEP_ALIVE_INTERVAL_MS = 60 * 60 * 1000L
 
 @AndroidEntryPoint
 class SyncService : Service() {
@@ -48,10 +53,12 @@ class SyncService : Service() {
     @Inject lateinit var deviceRepository: DeviceRepository
     @Inject lateinit var taskRepository: TaskRepository
     @Inject lateinit var notificationScheduler: NotificationScheduler
+    @Inject lateinit var subnetScanner: SubnetScanner
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var httpServer: HttpServer? = null
-    private var udpDiscovery: UdpDiscovery? = null
+    private var scanJob: Job? = null
+    private var keepAliveJob: Job? = null
     private lateinit var connectivityManager: ConnectivityManager
 
     private val ipTrackingCallback = object : ConnectivityManager.NetworkCallback() {
@@ -85,16 +92,16 @@ class SyncService : Service() {
             when {
                 info.isConnected -> {
                     if (syncManager.peerIp.value == null) {
-                        AppLogger.i(TAG, "WiFi connected — restarting discovery")
-                        udpDiscovery?.restartDiscovery(scope)
+                        AppLogger.i(TAG, "WiFi connected — starting subnet scan")
+                        startSubnetScan()
                     } else {
-                        AppLogger.i(TAG, "WiFi connected — peer IP retained, skipping discovery")
+                        AppLogger.i(TAG, "WiFi connected — peer IP retained, skipping scan")
                     }
                 }
                 !info.isConnectedOrConnecting -> {
                     AppLogger.i(TAG, "WiFi disconnected — clearing peer IP")
+                    scanJob?.cancel()
                     syncManager.setPeerIp(null)
-                    udpDiscovery?.pauseDiscovery()
                 }
             }
         }
@@ -111,7 +118,7 @@ class SyncService : Service() {
             .build()
         connectivityManager.registerNetworkCallback(request, ipTrackingCallback)
         startHttpServer()
-        startUdpDiscovery()
+        startKeepAlive()
         observeTaskChanges()
         registerReceiver(wifiReceiver, IntentFilter(WifiManager.NETWORK_STATE_CHANGED_ACTION))
     }
@@ -131,48 +138,82 @@ class SyncService : Service() {
         connectivityManager.unregisterNetworkCallback(ipTrackingCallback)
         unregisterReceiver(wifiReceiver)
         httpServer?.stop()
-        udpDiscovery?.stop()
+        scanJob?.cancel()
+        keepAliveJob?.cancel()
     }
 
     private fun startHttpServer() {
         AppLogger.i(TAG, "HTTP server started on :8080")
-        httpServer = HttpServer(8080) { incoming ->
-            val localTasks = syncUseCase.getLocalSnapshot()
-            val localDevices = buildDevicesPayload()
+        httpServer = HttpServer(
+            port = 8080,
+            ownDeviceId = deviceIdManager.deviceId,
+            onSyncRequest = { incoming, senderIp ->
+                if (senderIp.isNotEmpty() && incoming.deviceId == prefs.pairedDeviceId
+                    && syncManager.peerIp.value == null
+                ) {
+                    AppLogger.i(TAG, "Peer reached us from $senderIp — saving IP")
+                    syncManager.setPeerIp(senderIp)
+                }
 
-            syncUseCase.mergeAll(
-                incoming.tasks.map { it.toDomain() },
-                incoming.devices.map { it.toDomain() }
-            )
+                val localTasks = syncUseCase.getLocalSnapshot()
+                val localDevices = buildDevicesPayload()
 
-            SyncPayload(
-                deviceId = deviceIdManager.deviceId,
-                tasks = localTasks.map { it.toDto() },
-                devices = localDevices.map { it.toDto() }
-            )
-        }.also { it.start() }
+                syncUseCase.mergeAll(
+                    incoming.tasks.map { it.toDomain() },
+                    incoming.devices.map { it.toDomain() }
+                )
+
+                SyncPayload(
+                    deviceId = deviceIdManager.deviceId,
+                    tasks = localTasks.map { it.toDto() },
+                    devices = localDevices.map { it.toDto() }
+                )
+            },
+            onPeerIdentified = { callerDeviceId, senderIp ->
+                if (callerDeviceId == prefs.pairedDeviceId && syncManager.peerIp.value == null) {
+                    AppLogger.i(TAG, "Peer reached us from $senderIp via keepAlive — saving IP")
+                    syncManager.setPeerIp(senderIp)
+                    scope.launch { triggerSync() }
+                }
+            }
+        ).also { it.start() }
     }
 
-    private fun startUdpDiscovery() {
-        val wifiManager = applicationContext.getSystemService(WifiManager::class.java)
-        udpDiscovery = UdpDiscovery(
-            wifiManager = wifiManager,
-            ownDeviceId = deviceIdManager.deviceId,
-            pairedDeviceId = prefs.pairedDeviceId,
-            onPeerDiscovered = { ip, deviceId ->
-                AppLogger.i(TAG, "Peer discovered: $ip (${deviceId.take(8)})")
+    private fun startSubnetScan() {
+        if (prefs.pairedDeviceId == null) return
+        scanJob?.cancel()
+        scanJob = scope.launch {
+            AppLogger.i(TAG, "Subnet scan started")
+            val ip = subnetScanner.scan()
+            if (ip != null) {
                 syncManager.setPeerIp(ip)
-                udpDiscovery?.pauseDiscovery()
-                scope.launch {
-                    val existing = deviceRepository.getDeviceById(deviceId)
-                    deviceRepository.upsertDevice(
-                        (existing ?: Device(deviceId = deviceId, displayName = "", color = 0))
-                            .copy(lastSeenAt = System.currentTimeMillis())
-                    )
-                }
                 triggerSync()
             }
-        ).also { it.start(scope) }
+        }
+    }
+
+    private fun startKeepAlive() {
+        keepAliveJob = scope.launch {
+            while (isActive) {
+                delay(KEEP_ALIVE_INTERVAL_MS)
+                val peerIp = syncManager.peerIp.value
+                if (peerIp == null) {
+                    if (scanJob?.isActive != true) {
+                        AppLogger.d(TAG, "KeepAlive — no peer IP, starting scan")
+                        startSubnetScan()
+                    }
+                    continue
+                }
+                val deviceId = httpClient.identify(peerIp, senderDeviceId = deviceIdManager.deviceId)
+                if (deviceId != null) {
+                    AppLogger.d(TAG, "KeepAlive OK — peer still at $peerIp")
+                } else {
+                    AppLogger.i(TAG, "KeepAlive failed — peer IP stale, starting scan")
+                    syncManager.setPeerIp(null)
+                    startSubnetScan()
+                }
+            }
+        }
     }
 
     private fun observeTaskChanges() {
@@ -187,7 +228,8 @@ class SyncService : Service() {
 
     private fun triggerSync() {
         val peerIp = syncManager.peerIp.value ?: run {
-            AppLogger.d(TAG, "triggerSync skipped — no peer IP")
+            AppLogger.d(TAG, "triggerSync skipped — no peer IP, starting scan")
+            if (scanJob?.isActive != true) startSubnetScan()
             return
         }
         if (syncManager.syncState.value == SyncState.SYNCING) {
@@ -221,10 +263,10 @@ class SyncService : Service() {
                     AppLogger.w(TAG, "Sync failed: null response from $peerIp")
                 }
             } catch (e: PeerUnreachableException) {
-                AppLogger.w(TAG, "Peer unreachable: $peerIp — clearing IP, restarting discovery")
+                AppLogger.w(TAG, "Peer unreachable: $peerIp — clearing IP, starting scan")
                 syncManager.setPeerIp(null)
                 syncManager.setSyncState(SyncState.ERROR)
-                udpDiscovery?.restartDiscovery(scope, resetCycle = false)
+                startSubnetScan()
             } catch (e: Exception) {
                 AppLogger.e(TAG, "Sync error: ${e.message}", e)
                 syncManager.setSyncState(SyncState.ERROR)

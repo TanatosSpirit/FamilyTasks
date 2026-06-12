@@ -20,9 +20,14 @@ class PeerUnreachableException : Exception()
 @Singleton
 class HttpClient @Inject constructor() {
 
-    private val client = OkHttpClient.Builder()
+    private val syncClient = OkHttpClient.Builder()
         .connectTimeout(5, TimeUnit.SECONDS)
         .readTimeout(10, TimeUnit.SECONDS)
+        .build()
+
+    private val scanClient = OkHttpClient.Builder()
+        .connectTimeout(1500, TimeUnit.MILLISECONDS)
+        .readTimeout(1500, TimeUnit.MILLISECONDS)
         .build()
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -37,7 +42,7 @@ class HttpClient @Inject constructor() {
                     .url("http://$peerIp:$port/sync")
                     .post(body)
                     .build()
-                val response = client.newCall(request).execute()
+                val response = syncClient.newCall(request).execute()
                 if (response.isSuccessful) {
                     response.body?.string()?.let { json.decodeFromString<SyncPayload>(it) }
                 } else {
@@ -54,6 +59,26 @@ class HttpClient @Inject constructor() {
                 AppLogger.e(TAG, "HTTP error: ${e.message}", e)
                 null
             }
+        }
+
+    // Silent: called 253 times per scan, failures are expected.
+    // senderDeviceId: if set, appended as ?deviceId=... so the receiver can learn our IP.
+    suspend fun identify(ip: String, port: Int = 8080, senderDeviceId: String? = null): String? =
+        withContext(Dispatchers.IO) {
+            try {
+                val url = if (senderDeviceId != null) {
+                    "http://$ip:$port/identify?deviceId=$senderDeviceId"
+                } else {
+                    "http://$ip:$port/identify"
+                }
+                val request = Request.Builder().url(url).get().build()
+                val response = scanClient.newCall(request).execute()
+                if (response.isSuccessful) {
+                    response.body?.string()?.let {
+                        json.decodeFromString<IdentifyResponse>(it).deviceId
+                    }
+                } else null
+            } catch (_: Exception) { null }
         }
 
     companion object {

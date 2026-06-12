@@ -66,3 +66,6 @@ fun TaskDto.toDomain() = Task(
 fun Device.toDto() = DeviceDto(deviceId = deviceId, displayName = displayName, color = color)
 
 fun DeviceDto.toDomain() = Device(deviceId = deviceId, displayName = displayName, color = color)
+
+@Serializable
+data class IdentifyResponse(val deviceId: String)
