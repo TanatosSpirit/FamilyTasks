@@ -1,5 +1,7 @@
 package com.familytasks.app.ui.tasks
 
+import android.app.DatePickerDialog
+import android.app.TimePickerDialog
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -16,15 +18,21 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.familytasks.app.domain.model.Device
 import com.familytasks.app.domain.model.Priority
 import com.familytasks.app.domain.model.Task
 import com.familytasks.app.domain.model.TaskStatus
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
 
 @Composable
 fun EditTaskContent(
@@ -35,11 +43,27 @@ fun EditTaskContent(
     onCancel: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     var title by remember { mutableStateOf(task.title) }
     var description by remember { mutableStateOf(task.description ?: "") }
     var priority by remember { mutableStateOf(task.priority) }
     var status by remember { mutableStateOf(task.status) }
     var assignedTo by remember { mutableStateOf(task.assignedTo) }
+    var dueDate by remember { mutableLongStateOf(task.dueDate ?: 0L) }
+
+    fun pickDateTime() {
+        val cal = Calendar.getInstance()
+        if (dueDate > 0L) cal.timeInMillis = dueDate
+        DatePickerDialog(context, { _, y, m, d ->
+            cal.set(y, m, d)
+            TimePickerDialog(context, { _, h, min ->
+                cal.set(Calendar.HOUR_OF_DAY, h)
+                cal.set(Calendar.MINUTE, min)
+                cal.set(Calendar.SECOND, 0)
+                dueDate = cal.timeInMillis
+            }, cal.get(Calendar.HOUR_OF_DAY), cal.get(Calendar.MINUTE), true).show()
+        }, cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH)).show()
+    }
 
     Column(
         modifier = modifier
@@ -103,6 +127,15 @@ fun EditTaskContent(
                 }
             }
         }
+        Text("Срок")
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = { pickDateTime() }) {
+                Text(if (dueDate > 0L) SimpleDateFormat("dd MMM HH:mm", Locale.getDefault()).format(Date(dueDate)) else "Выбрать дату")
+            }
+            if (dueDate > 0L) {
+                OutlinedButton(onClick = { dueDate = 0L }) { Text("Убрать") }
+            }
+        }
         Spacer(modifier = Modifier.height(8.dp))
         Button(
             onClick = {
@@ -117,6 +150,7 @@ fun EditTaskContent(
                     priority = priority,
                     status = status,
                     assignedTo = assignedTo,
+                    dueDate = if (dueDate > 0L) dueDate else null,
                     completedAt = completedAt
                 ))
             },

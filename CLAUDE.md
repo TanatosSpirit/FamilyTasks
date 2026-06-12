@@ -6,6 +6,8 @@ Android-приложение для совместного управления 
 
 ## Быстрый старт
 
+> **Сборкой занимается пользователь.** Не запускать `./gradlew` самостоятельно — команды ниже приведены для справки.
+
 ```bash
 # Сборка debug APK (из корня проекта)
 ./gradlew assembleDebug
@@ -296,6 +298,7 @@ MulticastLock удерживал WiFi-чип вне power-save режима по
 - `updatedAt` обновляется через `System.currentTimeMillis()` при каждом изменении задачи — никогда не проставляется вручную в UI.
 - Удаление задач — только `taskRepository.deleteTask(id, updatedAt)`, который ставит `deleted = true`. Физического удаления нет.
 - `completedAt` выставляется автоматически в `TaskDetailViewModel` (`cycleStatus` и `updateTask`): при переходе в `DONE` → `System.currentTimeMillis()`, при переходе обратно — `null`. В `EditTaskContent` та же логика применяется на стороне UI перед вызовом `onSave`. Никогда не проставлять вручную.
+- `dueDate` редактируется как при создании (`CreateTaskScreen`), так и при редактировании (`EditTaskContent`) — через `DatePickerDialog` + `TimePickerDialog`. При открытии формы редактирования пикер инициализируется текущим значением дедлайна, если оно есть. Кнопка "Убрать" сбрасывает в `null`. Значение передаётся в `task.copy(dueDate = ...)` как `Long?`.
 - StateFlow для UI-состояния, `collectAsStateWithLifecycle()` в Compose.
 - `combine` с >5 потоками: сначала сгруппировать в промежуточные data-классы (см. `TaskListViewModel`).
 
