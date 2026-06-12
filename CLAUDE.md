@@ -84,6 +84,13 @@ ui/
 WiFi подключилось
   └─ wifiReceiver → если peerIp == null → SubnetScanner.scan()
                     если peerIp != null → пропускается (IP сохранён; типично при mesh-роуминге)
+
+WiFi отключилось
+  └─ wifiReceiver → scanJob отменяется; peerIp НЕ очищается
+       (при переподключении к той же сети triggerSync сразу попробует сохранённый IP)
+       (если IP устарел → PeerUnreachableException очистит его и запустит scan)
+
+SubnetScanner.scan() — guard: если WiFi недоступен (isWifiConnected() == false), выход без запуска
        │
        ├─ SubnetScanner — параллельные GET /identify к 192.168.x.1–254
        │   (concurrency=10, timeout 1.5 сек на хост)
@@ -366,6 +373,8 @@ NanoHTTPD кладёт IP входящего подключения в заго�
 
 Guard `scanJob?.isActive != true` в первых двух путях не даёт запустить параллельный scan, если он уже идёт.
 
+`startSubnetScan()` дополнительно проверяет `isWifiConnected()` через `ConnectivityManager.getNetworkCapabilities()` — scan не запускается, если WiFi недоступен. Это предотвращает бесполезные scan-циклы после отключения сети, когда задача изменилась или сработал keepAlive при `peerIp == null`.
+
 ### MergeTasksUseCase — условный upsert
 
 `upsertTasks(merged)` вызывается **только если `added > 0 || updated > 0`**. Вызов upsert при нулевых изменениях создаёт транзакцию на таблицу `tasks` в Room, что провоцирует лишнюю эмиссию в `observeAllTasks()` и в итоге паразитный повторный sync через 3 секунды (debounce).
@@ -417,7 +426,7 @@ AppLogger.e(TAG, "ошибка", throwable)
 | `Peer reached us from ... via keepAlive — saving IP` | `SyncService` | I | Партнёр восстановил наш IP пассивно через keepAlive |
 | `WiFi connected — starting subnet scan` | `SyncService` | I | peerIp был null → scan запущен при подключении |
 | `WiFi connected — peer IP retained` | `SyncService` | I | peerIp уже есть (mesh-роуминг) — scan не нужен |
-| `WiFi disconnected — clearing peer IP` | `SyncService` | I | Потеря сети → IP очищен |
+| `WiFi disconnected` | `SyncService` | I | Потеря сети → scan отменён, peerIp сохранён |
 | `Boot completed — starting SyncService` | `BootReceiver` | I | Холодный старт по загрузке системы |
 | `Schedule notification [tag] in Nm` | `NotificationScheduler` | D | Выставление будильника через WorkManager |
 | `Cancel notifications for task ...` | `NotificationScheduler` | D | Отмена будильника WorkManager |

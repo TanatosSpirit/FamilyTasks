@@ -100,9 +100,8 @@ class SyncService : Service() {
                     }
                 }
                 !info.isConnectedOrConnecting -> {
-                    AppLogger.i(TAG, "WiFi disconnected — clearing peer IP")
+                    AppLogger.i(TAG, "WiFi disconnected")
                     scanJob?.cancel()
-                    syncManager.setPeerIp(null)
                 }
             }
         }
@@ -186,8 +185,15 @@ class SyncService : Service() {
         }
     }
 
+    private fun isWifiConnected(): Boolean {
+        val network = connectivityManager.activeNetwork ?: return false
+        val caps = connectivityManager.getNetworkCapabilities(network) ?: return false
+        return caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
+    }
+
     private fun startSubnetScan() {
         if (prefs.pairedDeviceId == null) return
+        if (!isWifiConnected()) return
         scanJob?.cancel()
         scanJob = scope.launch {
             AppLogger.i(TAG, "Subnet scan started")
