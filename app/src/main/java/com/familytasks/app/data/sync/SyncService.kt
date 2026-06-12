@@ -63,10 +63,11 @@ class SyncService : Service() {
 
     private val ipTrackingCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) {
-            val ip = connectivityManager.getLinkProperties(network)
+            val allAddresses = connectivityManager.getLinkProperties(network)
                 ?.linkAddresses
-                ?.firstOrNull { it.address.hostAddress?.contains('.') == true }
-                ?.address?.hostAddress ?: return
+                ?.mapNotNull { it.address.hostAddress } ?: return
+            AppLogger.d(TAG, "WiFi available, all addresses: $allAddresses")
+            val ip = allAddresses.firstOrNull { it.contains('.') } ?: return
             AppLogger.w(TAG, "WiFi connected, IP: $ip")
             prefs.lastKnownOwnIp = ip
         }
@@ -143,7 +144,6 @@ class SyncService : Service() {
     }
 
     private fun startHttpServer() {
-        AppLogger.i(TAG, "HTTP server started on :8080")
         httpServer = HttpServer(
             port = 8080,
             ownDeviceId = deviceIdManager.deviceId,
@@ -176,7 +176,14 @@ class SyncService : Service() {
                     scope.launch { triggerSync() }
                 }
             }
-        ).also { it.start() }
+        ).also {
+            try {
+                it.start()
+                AppLogger.i(TAG, "HTTP server started on :8080")
+            } catch (e: Exception) {
+                AppLogger.e(TAG, "HTTP server failed to start: ${e.message}", e)
+            }
+        }
     }
 
     private fun startSubnetScan() {
@@ -219,8 +226,8 @@ class SyncService : Service() {
     private fun observeTaskChanges() {
         scope.launch {
             taskRepository.observeAllTasks()
-                .drop(1)
                 .distinctUntilChanged()
+                .drop(1)
                 .debounce(3_000L)
                 .collect { triggerSync() }
         }

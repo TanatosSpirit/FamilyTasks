@@ -6,7 +6,7 @@ Android-приложение для совместного управления 
 
 ## Быстрый старт
 
-> **Сборкой занимается пользователь.** Не запускать `./gradlew` самостоятельно — команды ниже приведены для справки.
+> **Сборкой и коммитами занимается пользователь.** Не запускать `./gradlew` самостоятельно и не предлагать / не выполнять `git commit` — команды ниже приведены для справки.
 
 ```bash
 # Сборка debug APK (из корня проекта)
@@ -366,6 +366,24 @@ NanoHTTPD кладёт IP входящего подключения в заго�
 
 Guard `scanJob?.isActive != true` в первых двух путях не даёт запустить параллельный scan, если он уже идёт.
 
+### MergeTasksUseCase — условный upsert
+
+`upsertTasks(merged)` вызывается **только если `added > 0 || updated > 0`**. Вызов upsert при нулевых изменениях создаёт транзакцию на таблицу `tasks` в Room, что провоцирует лишнюю эмиссию в `observeAllTasks()` и в итоге паразитный повторный sync через 3 секунды (debounce).
+
+### observeTaskChanges — порядок операторов
+
+В `SyncService.observeTaskChanges()` операторы стоят в строгом порядке:
+
+```kotlin
+taskRepository.observeAllTasks()
+    .distinctUntilChanged()  // запоминает initial-список как baseline
+    .drop(1)                 // дропает только первую (initial) эмиссию
+    .debounce(3_000L)
+    .collect { triggerSync() }
+```
+
+**Нельзя менять местами `distinctUntilChanged()` и `drop(1)`.** Если `drop(1)` стоит первым, `distinctUntilChanged()` никогда не видит initial-эмиссию, baseline не устанавливается, и первая же эмиссия после дропа (даже с теми же данными) проходит насквозь до `debounce` — что даёт лишний `triggerSync()` через 3 секунды после каждого sync.
+
 ### AppLogger — встроенный лог-вьюер
 
 `AppLogger` — Kotlin `object` (синглтон без DI) в `core/`. Хранит последние 500 записей в `ArrayDeque` в памяти, публикует их через `StateFlow<List<LogEntry>>`. Каждый вызов дублируется в Logcat.
@@ -378,6 +396,8 @@ AppLogger.e(TAG, "ошибка", throwable)
 Покрытые источники: `SyncService`, `HttpClient`, `HttpServer`, `SubnetScanner`, `MergeTasksUseCase`, `BootReceiver`, `NotificationScheduler`.
 
 Доступ в UI: **Настройки → Диагностика → Логи синхронизации**. Там же кнопка Share — экспортирует лог в `familytasks_log.txt` через стандартный Android Share Sheet (FileProvider, `cache/logs/`).
+
+**Порядок записей в файле:** новые сверху, старые снизу. При чтении лога читать **снизу вверх** (старые → новые) для восстановления хронологии событий.
 
 **Удаление**: удалить `core/AppLogger.kt`, `ui/logs/`, убрать `Screen.Logs` из навигации, секцию «Диагностика» из `SettingsScreen`, заменить `AppLogger.` на `Log.` в sync-файлах и `MergeTasksUseCase.kt` (Find & Replace).
 

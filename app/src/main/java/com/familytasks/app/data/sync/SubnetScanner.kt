@@ -27,6 +27,9 @@ class SubnetScanner @Inject constructor(
         val subnet = ownIp.substringBeforeLast('.') + '.'
         AppLogger.i(TAG, "Scanning ${subnet}* for ${pairedDeviceId.take(8)}")
 
+        var responded = 0
+        var wrongId = 0
+
         val result = (1..254)
             .map { "$subnet$it" }
             .filter { it != ownIp }
@@ -34,15 +37,20 @@ class SubnetScanner @Inject constructor(
             .flatMapMerge(concurrency = SCAN_CONCURRENCY) { ip ->
                 flow {
                     val deviceId = httpClient.identify(ip)
-                    if (deviceId == pairedDeviceId) emit(ip)
+                    if (deviceId != null) {
+                        responded++
+                        if (deviceId == pairedDeviceId) emit(ip)
+                        else wrongId++
+                    }
                 }
             }
             .firstOrNull()
 
         if (result != null) {
-            AppLogger.i(TAG, "Peer found at $result")
+            AppLogger.i(TAG, "Peer found at $result ($responded hosts responded)")
         } else {
-            AppLogger.i(TAG, "Scan complete — peer not on subnet ${subnet}*")
+            AppLogger.i(TAG, "Scan complete — peer not on subnet ${subnet}* " +
+                "($responded responded, $wrongId wrong deviceId)")
         }
         return result
     }

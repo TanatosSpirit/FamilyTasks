@@ -50,7 +50,9 @@ class MergeTasksUseCase @Inject constructor(
         AppLogger.i(TAG, "Merge done: +$added new, ~$updated updated, =$unchanged unchanged")
 
         val merged = localTasks.values.toList()
-        taskRepository.upsertTasks(merged)
+        if (added > 0 || updated > 0) {
+            taskRepository.upsertTasks(merged)
+        }
         return merged
     }
 
