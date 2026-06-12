@@ -19,12 +19,14 @@ class MergeTasksUseCase @Inject constructor(
         AppLogger.i(TAG, "Merge: ${remoteTasks.size} remote, ${localTasks.size} local")
 
         var added = 0; var updated = 0; var unchanged = 0
+        val toUpsert = mutableListOf<Task>()
 
         for (remote in remoteTasks) {
             val local = localTasks[remote.id]
             when {
                 local == null -> {
                     localTasks[remote.id] = remote
+                    toUpsert.add(remote)
                     added++
                     AppLogger.d(TAG, "New: '${remote.title}' (assigned=${if (remote.assignedTo == myDeviceId) "me" else "other"}, deleted=${remote.deleted})")
                     if (!remote.deleted && remote.assignedTo == myDeviceId) {
@@ -35,6 +37,7 @@ class MergeTasksUseCase @Inject constructor(
                 }
                 remote.updatedAt > local.updatedAt -> {
                     localTasks[remote.id] = remote
+                    toUpsert.add(remote)
                     updated++
                     AppLogger.d(TAG, "Updated: '${remote.title}' (local=${local.updatedAt}, remote=${remote.updatedAt})")
                     if (!remote.deleted && remote.createdBy == myDeviceId && remote.status != local.status) {
@@ -47,13 +50,12 @@ class MergeTasksUseCase @Inject constructor(
             }
         }
 
-        AppLogger.i(TAG, "Merge done: +$added new, ~$updated updated, =$unchanged unchanged")
+        AppLogger.i(TAG, "Merge done: +$added new, ~$updated updated, =$unchanged unchanged — writing ${toUpsert.size}/${localTasks.size} tasks to DB")
 
-        val merged = localTasks.values.toList()
-        if (added > 0 || updated > 0) {
-            taskRepository.upsertTasks(merged)
+        if (toUpsert.isNotEmpty()) {
+            taskRepository.upsertTasks(toUpsert)
         }
-        return merged
+        return localTasks.values.toList()
     }
 
     companion object {

@@ -248,6 +248,7 @@ CAMERA                        ← для сканирования QR
 | `PreferencesManager.kt` | все ключи SharedPreferences |
 | `TaskListViewModel.kt` | фильтрация, сортировка, compose state |
 | `AppLogger.kt` | встроенное логирование — singleton, circular buffer 500 записей |
+| `docs/database-access.md` | все обращения к БД: какие запросы, когда, в каком объёме |
 
 ---
 
@@ -375,9 +376,17 @@ Guard `scanJob?.isActive != true` в первых двух путях не да�
 
 `startSubnetScan()` дополнительно проверяет `isWifiConnected()` через `ConnectivityManager.getNetworkCapabilities()` — scan не запускается, если WiFi недоступен. Это предотвращает бесполезные scan-циклы после отключения сети, когда задача изменилась или сработал keepAlive при `peerIp == null`.
 
-### MergeTasksUseCase — условный upsert
+### MergeTasksUseCase — точечный upsert только изменившихся задач
 
-`upsertTasks(merged)` вызывается **только если `added > 0 || updated > 0`**. Вызов upsert при нулевых изменениях создаёт транзакцию на таблицу `tasks` в Room, что провоцирует лишнюю эмиссию в `observeAllTasks()` и в итоге паразитный повторный sync через 3 секунды (debounce).
+В цикле merge ведётся отдельный список `toUpsert`, куда попадают только задачи со статусом `added` или `updated`. В конце вызывается `upsertTasks(toUpsert)`, а не весь merged-список. Если `toUpsert` пуст — запись в БД не происходит вообще.
+
+**Почему важно:** `upsertAll()` — одна транзакция, но она касается всех переданных строк. Запись неизменившихся задач — лишний WAL-трафик, который растёт по мере накопления tombstone-ов. Запись при нулевых изменениях создаёт транзакцию и провоцирует эмиссию в `observeAllTasks()` → паразитный повторный sync через 3 секунды (debounce).
+
+Лог-строка после merge:
+```
+Merge done: +1 new, ~1 updated, =23 unchanged — writing 2/25 tasks to DB
+```
+Дробь `2/25` = записанных строк / всего в таблице (активные + tombstone-ы).
 
 ### observeTaskChanges — порядок операторов
 
