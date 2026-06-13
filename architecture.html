@@ -1,0 +1,1135 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FamilyTasks — Архитектура</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface2: #21262d;
+    --border: #30363d;
+    --text: #c9d1d9;
+    --text-dim: #8b949e;
+    --blue: #58a6ff;
+    --purple: #bc8cff;
+    --green: #3fb950;
+    --yellow: #e3b341;
+    --orange: #f0883e;
+    --red: #f85149;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    padding: 2rem;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+  header {
+    text-align: center;
+    padding: 2.5rem 0 2rem;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 3rem;
+  }
+  header h1 { font-size: 2rem; font-weight: 700; color: var(--blue); letter-spacing: -0.5px; }
+  header p { color: var(--text-dim); margin-top: 0.5rem; font-size: 0.95rem; }
+  .badge {
+    display: inline-block;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 0.2rem 0.75rem;
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    margin: 0.25rem;
+  }
+  .badges { margin-top: 1rem; }
+
+  section { margin-bottom: 3.5rem; }
+  section h2 {
+    font-size: 1.3rem;
+    font-weight: 600;
+    color: var(--purple);
+    margin-bottom: 0.4rem;
+    padding-bottom: 0.6rem;
+    border-bottom: 1px solid var(--border);
+  }
+  section .subtitle { color: var(--text-dim); font-size: 0.875rem; margin-bottom: 1.25rem; }
+
+  /* ── Zoom wrapper ── */
+  .diagram-wrap {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .zoom-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.5rem 0.75rem;
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+  .zoom-hint {
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    user-select: none;
+  }
+  .zoom-btns {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    flex-shrink: 0;
+  }
+  .zoom-btn {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 6px;
+    width: 28px;
+    height: 28px;
+    font-size: 1rem;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s, border-color 0.15s;
+    user-select: none;
+  }
+  .zoom-btn:hover { background: var(--border); border-color: var(--text-dim); }
+  .zoom-btn:active { background: #444c56; }
+  .zoom-pct {
+    font-size: 0.78rem;
+    color: var(--text-dim);
+    min-width: 42px;
+    text-align: center;
+    user-select: none;
+    font-variant-numeric: tabular-nums;
+  }
+  .zoom-sep {
+    width: 1px;
+    height: 20px;
+    background: var(--border);
+    margin: 0 0.15rem;
+  }
+
+  /* ── Viewport (clip area) ── */
+  .diagram-viewport {
+    position: relative;
+    overflow: hidden;
+    cursor: grab;
+    background: var(--surface);
+  }
+  .diagram-viewport:active { cursor: grabbing; }
+
+  /* ── Movable inner layer ── */
+  .diagram-inner {
+    position: relative;
+    display: inline-block;
+    vertical-align: top;
+    transform-origin: 0 0;
+    will-change: transform;
+    padding: 1.5rem;
+  }
+
+  /* Mermaid SVG reset — let transform drive size */
+  .diagram-inner .mermaid { display: block; }
+  .diagram-inner .mermaid svg {
+    display: block;
+    max-width: none !important;
+    height: auto;
+  }
+
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-top: 1rem;
+    padding: 0.75rem 1rem;
+    background: var(--surface2);
+    border-radius: 8px;
+    border: 1px solid var(--border);
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.8rem;
+    color: var(--text-dim);
+  }
+  .dot { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+  @media (max-width: 900px) { .grid-2 { grid-template-columns: 1fr; } }
+
+  footer {
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 0.8rem;
+    padding-top: 2rem;
+    border-top: 1px solid var(--border);
+    margin-top: 2rem;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>FamilyTasks</h1>
+  <p>Архитектура и потоки данных Android-приложения</p>
+  <div class="badges">
+    <span class="badge">Kotlin 2.0</span>
+    <span class="badge">Jetpack Compose</span>
+    <span class="badge">Clean Architecture</span>
+    <span class="badge">Room DB</span>
+    <span class="badge">Hilt DI</span>
+    <span class="badge">P2P WiFi Sync</span>
+    <span class="badge">NanoHTTPD :8080</span>
+  </div>
+</header>
+
+<!-- ═══════════════════════════════════════════════════════════
+     DIAGRAM 1 — ARCHITECTURE LAYERS
+     ═══════════════════════════════════════════════════════════ -->
+<section>
+  <h2>1. Архитектура приложения</h2>
+  <p class="subtitle">Слои Clean Architecture и зависимости между компонентами. Стрелки показывают направление зависимостей (UI → Domain ← Data).</p>
+  <div class="diagram-wrap">
+    <div class="zoom-bar">
+      <span class="zoom-hint">колёсико — масштаб · перетащить — панорама · двойной клик — сброс</span>
+      <div class="zoom-btns">
+        <button class="zoom-btn" data-action="out" title="Уменьшить">−</button>
+        <span class="zoom-pct">100%</span>
+        <button class="zoom-btn" data-action="in" title="Увеличить">+</button>
+        <div class="zoom-sep"></div>
+        <button class="zoom-btn" data-action="reset" title="Сбросить">↺</button>
+      </div>
+    </div>
+    <div class="diagram-viewport" style="height:680px">
+      <div class="diagram-inner">
+        <div class="mermaid">
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "background": "#161b22",
+    "primaryColor": "#21262d",
+    "primaryTextColor": "#c9d1d9",
+    "primaryBorderColor": "#30363d",
+    "lineColor": "#58a6ff",
+    "secondaryColor": "#161b22",
+    "tertiaryColor": "#0d1117",
+    "edgeLabelBackground": "#21262d",
+    "clusterBkg": "#0d1117",
+    "clusterBorder": "#30363d",
+    "titleColor": "#c9d1d9",
+    "nodeTextColor": "#c9d1d9"
+  }
+}}%%
+graph TB
+
+  subgraph ENTRY["Точка входа"]
+    APP["FamilyTasksApplication\nHiltApp + WorkManager"]
+    MAIN["MainActivity\nEdge-to-edge + NavHost"]
+    BOOT["BootReceiver\nACTION_BOOT_COMPLETED"]
+    APP --> MAIN
+    BOOT -->|"startForegroundService"| SYNCSVC
+  end
+
+  subgraph UI["UI Layer — Jetpack Compose"]
+    direction TB
+    NAVGRAPH["NavGraph\n7 маршрутов"]
+
+    subgraph SCREENS["Экраны + ViewModels"]
+      direction LR
+      TL["TaskList\nViewModel"]
+      TD["TaskDetail\nViewModel"]
+      CT["CreateTask\nViewModel"]
+      SET["Settings\nViewModel"]
+      OB["Onboarding\nViewModel"]
+      QR["QrCode\nViewModel"]
+      LOG["Logs\nViewModel"]
+    end
+
+    NAVGRAPH --> SCREENS
+  end
+
+  subgraph DOMAIN["Domain Layer"]
+    direction TB
+    subgraph MODELS["Модели"]
+      direction LR
+      TASK["Task\nid·title·status\npriority·dueDate\nassignedTo·deleted\ncompletedAt·updatedAt"]
+      DEV["Device\ndeviceId\ndisplayName\ncolor"]
+    end
+    subgraph REPO_I["Repository Interfaces"]
+      direction LR
+      TR["TaskRepository"]
+      DR["DeviceRepository"]
+    end
+    subgraph USECASES["Use Cases"]
+      direction LR
+      SU["SyncUseCase\ngetLocalSnapshot\ngetLocalDevices\nmergeAll"]
+      MTU["MergeTasksUseCase\nconflict resolution\ntimestamp wins"]
+    end
+    SU --> MTU
+    SU --> TR
+    SU --> DR
+    MTU --> TR
+    MTU --> DR
+  end
+
+  subgraph DATA["Data Layer"]
+    direction TB
+    subgraph ROOM["Room Database v2"]
+      direction LR
+      DB[("AppDatabase\nSQLite")]
+      TDAO["TaskDao\nupsert·delete·observe"]
+      DDAO["DeviceDao\nupsert·observe"]
+      DB --> TDAO & DDAO
+    end
+    subgraph REPO_IMPL["Реализации репозиториев"]
+      direction LR
+      TRI["TaskRepositoryImpl"]
+      DRI["DeviceRepositoryImpl"]
+    end
+    TRI --> TDAO
+    DRI --> DDAO
+
+    subgraph SYNC["Модуль синхронизации"]
+      direction TB
+      SYNCSVC["SyncService\nForeground Service\ncontinuous :8080"]
+      SYNCMGR["SyncManager\npeerIp · syncState\nlastSyncAt  StateFlow"]
+      HS["HttpServer\nGET /identify\nPOST /sync\nNanoHTTPD"]
+      HC["HttpClient\nsyncClient 5s/10s\nscanClient 1.5s"]
+      SCN["SubnetScanner\nparallel×10\n192.168.x.1-254"]
+      DTO["SyncDto\nSyncPayload\nTaskDto · DeviceDto"]
+      SYNCSVC --> SYNCMGR & HS & HC & SCN
+      HC --> DTO
+      HS --> DTO
+    end
+  end
+
+  subgraph CORE["Core / Infrastructure"]
+    direction LR
+    PM["PreferencesManager\nSharedPreferences\ndeviceId·peerIp\nnotify flags"]
+    DIM["DeviceIdManager\nUUID lazy init"]
+    AL["AppLogger\ncircular buffer 500\nStateFlow"]
+    DIM --> PM
+  end
+
+  subgraph NOTIF["Notifications"]
+    direction LR
+    NS["NotificationScheduler\n3 channels:\ndue·new_task·status"]
+    DNW["DueNotificationWorker\nWorkManager\nOneTimeWork"]
+    NS --> DNW
+  end
+
+  subgraph DI["DI — Hilt"]
+    direction LR
+    AM["AppModule\n@Binds repos"]
+    DBM["DatabaseModule\n@Provides Room"]
+    WM["WorkerModule\n@Provides WorkManager"]
+  end
+
+  MAIN --> NAVGRAPH
+  UI --> DOMAIN
+  UI --> CORE
+  REPO_IMPL --> MODELS
+  TRI -.->|implements| TR
+  DRI -.->|implements| DR
+  SYNCSVC --> SU
+  SYNCSVC --> PM
+  SYNCSVC --> AL
+  DATA --> CORE
+  NOTIF --> CORE
+  DI -.->|injects| DATA
+  DI -.->|injects| DOMAIN
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="legend">
+    <div class="legend-item"><div class="dot" style="background:#bc8cff"></div>UI Layer (Compose + ViewModel)</div>
+    <div class="legend-item"><div class="dot" style="background:#58a6ff"></div>Domain Layer (чистая бизнес-логика)</div>
+    <div class="legend-item"><div class="dot" style="background:#3fb950"></div>Data Layer (Room + Sync)</div>
+    <div class="legend-item"><div class="dot" style="background:#e3b341"></div>Core / Infrastructure</div>
+    <div class="legend-item"><div class="dot" style="background:#f0883e"></div>Hilt DI</div>
+    <div class="legend-item" style="margin-left:auto;"><span style="color:#58a6ff">─→</span> зависимость</div>
+    <div class="legend-item"><span style="color:#8b949e">- -→</span> реализует интерфейс</div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════
+     DIAGRAM 2 — SYNC DISCOVERY SEQUENCE
+     ═══════════════════════════════════════════════════════════ -->
+<section>
+  <h2>2. Поток синхронизации — обнаружение партнёра и обмен данными</h2>
+  <p class="subtitle">Последовательность событий от подключения WiFi до завершения синхронизации. Показаны все три пути восстановления peerIp.</p>
+  <div class="diagram-wrap">
+    <div class="zoom-bar">
+      <span class="zoom-hint">колёсико — масштаб · перетащить — панорама · двойной клик — сброс</span>
+      <div class="zoom-btns">
+        <button class="zoom-btn" data-action="out">−</button>
+        <span class="zoom-pct">100%</span>
+        <button class="zoom-btn" data-action="in">+</button>
+        <div class="zoom-sep"></div>
+        <button class="zoom-btn" data-action="reset">↺</button>
+      </div>
+    </div>
+    <div class="diagram-viewport" style="height:820px">
+      <div class="diagram-inner">
+        <div class="mermaid">
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "background": "#161b22",
+    "primaryColor": "#21262d",
+    "primaryTextColor": "#c9d1d9",
+    "primaryBorderColor": "#30363d",
+    "lineColor": "#8b949e",
+    "secondaryColor": "#21262d",
+    "activationBkgColor": "#21262d",
+    "activationBorderColor": "#58a6ff",
+    "sequenceNumberColor": "#0d1117",
+    "actorBkg": "#21262d",
+    "actorBorder": "#30363d",
+    "actorTextColor": "#c9d1d9",
+    "actorLineColor": "#30363d",
+    "labelBoxBkgColor": "#161b22",
+    "labelBoxBorderColor": "#30363d",
+    "labelTextColor": "#8b949e",
+    "loopTextColor": "#8b949e",
+    "noteBkgColor": "#21262d",
+    "noteBorderColor": "#30363d",
+    "noteTextColor": "#c9d1d9",
+    "signalColor": "#58a6ff",
+    "signalTextColor": "#c9d1d9"
+  },
+  "sequence": { "showSequenceNumbers": true, "actorMargin": 60 }
+}}%%
+sequenceDiagram
+  autonumber
+
+  participant WR as WiFiReceiver
+  participant SS as SyncService
+  participant SM as SyncManager
+  participant SCN as SubnetScanner
+  participant HC as HttpClient
+  participant DB as Room DB
+  participant HS as HttpServer
+  participant PEER as Peer :8080
+
+  Note over SS,HS: SyncService запущен как Foreground Service на порту 8080
+
+  rect rgb(13,17,23)
+    Note over WR,PEER: Путь 1 — активный scan (peerIp == null при подключении WiFi)
+    WR->>SS: onWifiConnected()
+    SS->>SM: peerIp == null?
+    SM-->>SS: null
+    SS->>SCN: scan(subnet "192.168.x.*")
+    Note over SCN: 253 IP, 10 параллельных,<br/>таймаут 1.5 с на хост
+
+    loop Для каждого IP (10 параллельно)
+      SCN->>PEER: GET /identify
+      PEER-->>SCN: { "deviceId": "peer-uuid" }
+    end
+
+    SCN-->>SS: peerIp = "192.168.x.Y"
+    SS->>SM: setPeerIp("192.168.x.Y")
+    SS->>SS: triggerSync()
+  end
+
+  rect rgb(13,17,23)
+    Note over SS,PEER: Синхронизация — обмен задачами
+    SS->>DB: getAllTasksSnapshot()
+    DB-->>SS: List&lt;Task&gt;
+    SS->>HC: sync(peerIp, SyncPayload)
+    HC->>PEER: POST /sync { deviceId, tasks[], devices[] }
+    PEER->>PEER: MergeTasksUseCase.merge(remoteTasks)
+    PEER->>PEER: DB.upsertTasks(merged)
+    PEER-->>HC: SyncPayload { tasks[], devices[] }
+    HC-->>SS: SyncPayload
+    SS->>SS: MergeTasksUseCase.mergeAll(remoteTasks, remoteDevices)
+    SS->>DB: upsertTasks(merged) [если added>0 || updated>0]
+    SS->>SM: syncState = SUCCESS, lastSyncAt = now()
+  end
+
+  rect rgb(13,17,23)
+    Note over SS,PEER: Путь 2 — пассивное восстановление IP через входящий keepAlive
+    PEER->>HS: GET /identify?deviceId=peer-uuid
+    HS->>SS: onPeerIdentified("peer-uuid", senderIp)
+    SS->>SM: peerIp == null? → setPeerIp(senderIp)
+    SS->>SS: triggerSync()
+  end
+
+  rect rgb(13,17,23)
+    Note over SS,PEER: Путь 3 — восстановление IP через входящий POST /sync
+    PEER->>HS: POST /sync { deviceId, tasks[], devices[] }
+    HS->>SS: onSyncRequest(payload, senderIp)
+    SS->>SM: peerIp == null? → setPeerIp(senderIp)
+    SS->>SS: MergeTasksUseCase.mergeAll(...)
+    HS-->>PEER: SyncPayload ответ
+  end
+
+  rect rgb(13,17,23)
+    Note over SS,PEER: keepAlive — раз в час (проверка актуальности IP)
+    SS->>HC: identify(peerIp, myDeviceId)
+    HC->>PEER: GET /identify?deviceId=my-uuid
+    alt IP актуален
+      PEER-->>HC: 200 { deviceId }
+      HC-->>SS: OK — ничего не делаем
+    else IP устарел / нет ответа
+      HC-->>SS: timeout / error
+      SS->>SM: peerIp = null
+      SS->>SCN: scan() снова
+    end
+  end
+
+  rect rgb(13,17,23)
+    Note over SS,DB: Триггер от изменения задачи (debounce 3 сек)
+    DB->>SS: observeAllTasks() emission
+    Note over SS: distinctUntilChanged()<br/>drop(1) — пропуск initial<br/>debounce(3000ms)
+    SS->>SM: peerIp != null?
+    alt peerIp есть
+      SS->>SS: triggerSync()
+    else peerIp == null
+      SS->>SCN: scan() (если не запущен)
+    end
+  end
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════
+     DIAGRAM 3 — TASK DATA FLOW
+     ═══════════════════════════════════════════════════════════ -->
+<section>
+  <h2>3. Поток данных задач</h2>
+  <p class="subtitle">Жизненный цикл задачи: от действия пользователя в UI до сохранения в БД, реактивного обновления экрана и синхронизации с партнёром.</p>
+
+  <div class="grid-2">
+    <div>
+      <p class="subtitle" style="margin-bottom:0.75rem">Запись и отображение</p>
+      <div class="diagram-wrap">
+        <div class="zoom-bar">
+          <span class="zoom-hint">колёсико · перетащить · двойной клик — сброс</span>
+          <div class="zoom-btns">
+            <button class="zoom-btn" data-action="out">−</button>
+            <span class="zoom-pct">100%</span>
+            <button class="zoom-btn" data-action="in">+</button>
+            <div class="zoom-sep"></div>
+            <button class="zoom-btn" data-action="reset">↺</button>
+          </div>
+        </div>
+        <div class="diagram-viewport" style="height:520px">
+          <div class="diagram-inner">
+            <div class="mermaid">
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "background": "#161b22",
+    "primaryColor": "#21262d",
+    "primaryTextColor": "#c9d1d9",
+    "primaryBorderColor": "#30363d",
+    "lineColor": "#58a6ff",
+    "edgeLabelBackground": "#21262d",
+    "clusterBkg": "#0d1117",
+    "clusterBorder": "#30363d"
+  }
+}}%%
+flowchart TD
+  U(["👤 Пользователь"])
+
+  subgraph UI_VM["UI + ViewModel"]
+    direction TB
+    ACT["Действие\nсоздать / изменить / удалить / смена статуса"]
+    VM["ViewModel\nsave / cycleStatus / delete"]
+  end
+
+  subgraph DOMAIN_L["Domain"]
+    direction TB
+    REPO["TaskRepository\nupsertTask / deleteTask"]
+    NOTE_["completedAt логика\nDONE → now()\nдругой → null"]
+    REPO --> NOTE_
+  end
+
+  subgraph ROOM_L["Room"]
+    direction TB
+    DAO["TaskDao\nINSERT OR REPLACE\nUPDATE deleted=1"]
+    DB2[("SQLite\ntasks")]
+    DAO --> DB2
+  end
+
+  subgraph REACT["Реактивный отклик"]
+    direction TB
+    FLOW["Flow&lt;List&lt;Task&gt;&gt;\nobserveActiveTasks"]
+    STATE["StateFlow\nUiState recompose"]
+  end
+
+  U --> ACT --> VM --> REPO
+  REPO --> DAO
+  DB2 -->|emit| FLOW --> STATE --> VM
+  VM -->|collectAsStateWithLifecycle| U
+
+  NS2["NotificationScheduler\nschedule / cancel"]
+  REPO --> NS2
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <p class="subtitle" style="margin-bottom:0.75rem">Слияние при синхронизации</p>
+      <div class="diagram-wrap">
+        <div class="zoom-bar">
+          <span class="zoom-hint">колёсико · перетащить · двойной клик — сброс</span>
+          <div class="zoom-btns">
+            <button class="zoom-btn" data-action="out">−</button>
+            <span class="zoom-pct">100%</span>
+            <button class="zoom-btn" data-action="in">+</button>
+            <div class="zoom-sep"></div>
+            <button class="zoom-btn" data-action="reset">↺</button>
+          </div>
+        </div>
+        <div class="diagram-viewport" style="height:520px">
+          <div class="diagram-inner">
+            <div class="mermaid">
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "background": "#161b22",
+    "primaryColor": "#21262d",
+    "primaryTextColor": "#c9d1d9",
+    "primaryBorderColor": "#30363d",
+    "lineColor": "#3fb950",
+    "edgeLabelBackground": "#21262d",
+    "clusterBkg": "#0d1117",
+    "clusterBorder": "#30363d"
+  }
+}}%%
+flowchart TD
+  START(["POST /sync получен\nили ответ на наш POST"])
+
+  subgraph MERGE["MergeTasksUseCase"]
+    direction TB
+    SNAP["getAllTasksSnapshot()\nлокальный список"]
+    LOOP["Для каждой remoteTask"]
+    CHK1{"Есть локально?"}
+    CHK2{"remote.updatedAt\n> local.updatedAt?"}
+    ADD["added++\nновая задача"]
+    UPD["updated++\nобновить"]
+    SKIP["unchanged\nоставить локальную\n(tie-break)"]
+
+    SNAP --> LOOP --> CHK1
+    CHK1 -->|"нет"| ADD
+    CHK1 -->|"да"| CHK2
+    CHK2 -->|"да"| UPD
+    CHK2 -->|"нет / равно"| SKIP
+  end
+
+  UPSERT{"added > 0\nили updated > 0?"}
+  DB3[("Room DB\nupsertTasks")]
+  NOOP["пропустить upsert\nизбежать лишнего emit\nи паразитного sync"]
+
+  NOTIF["уведомление:\nновая задача назначена мне\nстатус моей задачи изменён"]
+
+  START --> SNAP
+  MERGE --> UPSERT
+  UPSERT -->|"да"| DB3
+  UPSERT -->|"нет"| NOOP
+  ADD & UPD --> NOTIF
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════
+     DIAGRAM 4 — STATE MACHINES
+     ═══════════════════════════════════════════════════════════ -->
+<section>
+  <h2>4. Состояния синхронизации и обнаружения партнёра</h2>
+  <p class="subtitle">State machine SyncManager: переходы между состояниями peerIp и syncState.</p>
+
+  <div class="grid-2">
+    <div>
+      <p class="subtitle" style="margin-bottom:0.75rem">Состояние peerIp</p>
+      <div class="diagram-wrap">
+        <div class="zoom-bar">
+          <span class="zoom-hint">колёсико · перетащить · двойной клик — сброс</span>
+          <div class="zoom-btns">
+            <button class="zoom-btn" data-action="out">−</button>
+            <span class="zoom-pct">100%</span>
+            <button class="zoom-btn" data-action="in">+</button>
+            <div class="zoom-sep"></div>
+            <button class="zoom-btn" data-action="reset">↺</button>
+          </div>
+        </div>
+        <div class="diagram-viewport" style="height:400px">
+          <div class="diagram-inner">
+            <div class="mermaid">
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "background": "#161b22",
+    "primaryColor": "#21262d",
+    "primaryTextColor": "#c9d1d9",
+    "primaryBorderColor": "#30363d",
+    "lineColor": "#58a6ff",
+    "edgeLabelBackground": "#21262d"
+  }
+}}%%
+stateDiagram-v2
+  direction LR
+  [*] --> UNKNOWN : старт / boot
+
+  UNKNOWN : peerIp = null
+  KNOWN : peerIp = "192.168.x.Y"
+  SCANNING : SubnetScanner активен
+
+  UNKNOWN --> SCANNING : WiFi подключился\n/ задача изменилась\n/ keepAlive tick
+  SCANNING --> KNOWN : peer найден
+  SCANNING --> UNKNOWN : peer не в сети\n(scan complete)
+  KNOWN --> UNKNOWN : WiFi отключился\n/ HTTP timeout\n/ keepAlive fail
+  UNKNOWN --> KNOWN : входящий /identify\nс deviceId партнёра\n(пассивное восстановление)
+  KNOWN --> KNOWN : keepAlive OK\n(IP не изменился)
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <p class="subtitle" style="margin-bottom:0.75rem">Состояние syncState</p>
+      <div class="diagram-wrap">
+        <div class="zoom-bar">
+          <span class="zoom-hint">колёсико · перетащить · двойной клик — сброс</span>
+          <div class="zoom-btns">
+            <button class="zoom-btn" data-action="out">−</button>
+            <span class="zoom-pct">100%</span>
+            <button class="zoom-btn" data-action="in">+</button>
+            <div class="zoom-sep"></div>
+            <button class="zoom-btn" data-action="reset">↺</button>
+          </div>
+        </div>
+        <div class="diagram-viewport" style="height:400px">
+          <div class="diagram-inner">
+            <div class="mermaid">
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "background": "#161b22",
+    "primaryColor": "#21262d",
+    "primaryTextColor": "#c9d1d9",
+    "primaryBorderColor": "#30363d",
+    "lineColor": "#3fb950",
+    "edgeLabelBackground": "#21262d"
+  }
+}}%%
+stateDiagram-v2
+  direction LR
+  [*] --> IDLE
+
+  IDLE : IDLE\nожидание
+  SYNCING : SYNCING\nHTTP запрос активен
+  SUCCESS : SUCCESS\nlastSyncAt обновлён
+  ERROR : ERROR\nPeerUnreachableException
+
+  IDLE --> SYNCING : triggerSync()\n(peerIp != null,\nsyncState != SYNCING)
+  SYNCING --> SUCCESS : POST /sync OK\nmerge завершён
+  SYNCING --> ERROR : HTTP timeout\n/ connection refused
+  SUCCESS --> IDLE : (немедленно)
+  ERROR --> IDLE : peerIp = null\nscan запущен
+  IDLE --> IDLE : triggerSync skipped\n(уже SYNCING или нет IP)
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════
+     DIAGRAM 5 — COMPONENT INTERACTION
+     ═══════════════════════════════════════════════════════════ -->
+<section>
+  <h2>5. Взаимодействие компонентов синхронизации</h2>
+  <p class="subtitle">Детальная схема зависимостей внутри модуля синхронизации и связи с остальными слоями.</p>
+  <div class="diagram-wrap">
+    <div class="zoom-bar">
+      <span class="zoom-hint">колёсико — масштаб · перетащить — панорама · двойной клик — сброс</span>
+      <div class="zoom-btns">
+        <button class="zoom-btn" data-action="out">−</button>
+        <span class="zoom-pct">100%</span>
+        <button class="zoom-btn" data-action="in">+</button>
+        <div class="zoom-sep"></div>
+        <button class="zoom-btn" data-action="reset">↺</button>
+      </div>
+    </div>
+    <div class="diagram-viewport" style="height:560px">
+      <div class="diagram-inner">
+        <div class="mermaid">
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "background": "#161b22",
+    "primaryColor": "#21262d",
+    "primaryTextColor": "#c9d1d9",
+    "primaryBorderColor": "#30363d",
+    "lineColor": "#58a6ff",
+    "edgeLabelBackground": "#21262d",
+    "clusterBkg": "#0d1117",
+    "clusterBorder": "#30363d"
+  }
+}}%%
+graph LR
+
+  subgraph ANDROID["Android System"]
+    direction TB
+    WIFIREC["NetworkCallback\nConnectivityManager"]
+    WORKMGR["WorkManager"]
+    NOTIFMGR["NotificationManager\n3 channels"]
+  end
+
+  subgraph SYNC_SVC["SyncService — Foreground Service"]
+    direction TB
+    OBS["observeTaskChanges()\ndistinctUntilChanged\ndrop(1) · debounce 3s"]
+    KA["keepAlive coroutine\nperiod = 1 hour"]
+    TSYNC["triggerSync()\nguard: SYNCING check\nguard: peerIp check"]
+    WIFI_H["wifiReceiver\nonWifiConnected\nonWifiDisconnected"]
+  end
+
+  subgraph SYNC_CORE["Sync Core"]
+    direction TB
+    SCN2["SubnetScanner\nFlow&lt;String&gt;\nflatMapMerge×10\nfirstOrNull"]
+    SM2["SyncManager\npeerIp: StateFlow\nsyncState: StateFlow\nlastSyncAt: StateFlow"]
+    HC2["HttpClient\nsyncClient OkHttp\nscanClient OkHttp"]
+    HS2["HttpServer\nNanoHTTPD :8080\nacceptLoop"]
+    DTOS["SyncDto\n@Serializable\nKotlinx.JSON"]
+  end
+
+  subgraph USE_CASES["Use Cases"]
+    direction TB
+    SU2["SyncUseCase"]
+    MTU2["MergeTasksUseCase\nadded / updated / unchanged\nskip upsert if 0+0"]
+  end
+
+  subgraph STORAGE["Storage"]
+    direction TB
+    TREPO["TaskRepository"]
+    DREPO["DeviceRepository"]
+    PREFS["PreferencesManager\nlastKnownOwnIp\npairedDeviceId"]
+  end
+
+  subgraph NOTIF_SYS["Notifications"]
+    NS3["NotificationScheduler"]
+  end
+
+  WIFIREC -->|"connected / lost"| WIFI_H
+  WIFI_H -->|"start scan"| SCN2
+  WIFI_H -->|"peerIp = null"| SM2
+
+  OBS -->|"emit after debounce"| TSYNC
+  KA -->|"tick"| TSYNC
+  TSYNC -->|"peerIp == null"| SCN2
+  TSYNC -->|"peerIp != null"| HC2
+
+  SCN2 -->|"GET /identify"| HC2
+  SCN2 -->|"found ip"| SM2
+
+  HC2 <-->|"POST /sync\nJSON"| HS2
+  HC2 --> DTOS
+  HS2 --> DTOS
+
+  HS2 -->|"onSyncRequest"| SU2
+  HS2 -->|"onPeerIdentified → peerIp"| SM2
+  SU2 --> MTU2
+  MTU2 --> TREPO & DREPO
+  MTU2 -->|"new/status events"| NS3
+
+  NS3 --> WORKMGR
+  WORKMGR --> NOTIFMGR
+
+  TREPO -->|"observeAllTasks Flow"| OBS
+  PREFS -->|"pairedDeviceId"| SCN2
+  PREFS -->|"lastKnownOwnIp"| SCN2
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════
+     DIAGRAM 6 — ONBOARDING + PAIRING
+     ═══════════════════════════════════════════════════════════ -->
+<section>
+  <h2>6. Онбординг и сопряжение устройств</h2>
+  <p class="subtitle">Первый запуск: создание идентификатора устройства, сопряжение через QR-код.</p>
+  <div class="diagram-wrap">
+    <div class="zoom-bar">
+      <span class="zoom-hint">колёсико — масштаб · перетащить — панорама · двойной клик — сброс</span>
+      <div class="zoom-btns">
+        <button class="zoom-btn" data-action="out">−</button>
+        <span class="zoom-pct">100%</span>
+        <button class="zoom-btn" data-action="in">+</button>
+        <div class="zoom-sep"></div>
+        <button class="zoom-btn" data-action="reset">↺</button>
+      </div>
+    </div>
+    <div class="diagram-viewport" style="height:500px">
+      <div class="diagram-inner">
+        <div class="mermaid">
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "background": "#161b22",
+    "primaryColor": "#21262d",
+    "primaryTextColor": "#c9d1d9",
+    "primaryBorderColor": "#30363d",
+    "lineColor": "#bc8cff",
+    "edgeLabelBackground": "#21262d",
+    "clusterBkg": "#0d1117",
+    "clusterBorder": "#30363d"
+  }
+}}%%
+flowchart TD
+  START(["Первый запуск"])
+  CHK{"isOnboardingComplete\n== true?"}
+  TASK_LIST(["TaskListScreen\nосновной экран"])
+
+  START --> CHK
+  CHK -->|"да"| TASK_LIST
+  CHK -->|"нет"| OB_SCR
+
+  subgraph OB_SCR["OnboardingScreen"]
+    direction TB
+    GEN_ID["DeviceIdManager\nгенерация UUID\nсохранение в SharedPreferences"]
+    NAME_INPUT["ввод displayName\nвыбор avatarColor"]
+    GEN_ID --> NAME_INPUT
+  end
+
+  NAME_INPUT --> QR_SCREEN
+
+  subgraph QR_SCREEN["QrCodeScreen"]
+    direction TB
+    QR_SHOW["показ QR-кода\nJSON: deviceId · displayName · color\nZXing render"]
+    QR_SCAN["сканирование QR партнёра\nZXing camera scan"]
+    QR_SHOW --- QR_SCAN
+  end
+
+  QR_SCAN --> SAVE_PAIR
+
+  subgraph SAVE_PAIR["Сохранение сопряжения"]
+    direction TB
+    PM_SAVE["PreferencesManager\npairedDeviceId\nisOnboardingComplete = true"]
+    DEVREP["DeviceRepository\nupsertDevice\nзапись о партнёре в Room"]
+    PM_SAVE --> DEVREP
+  end
+
+  SAVE_PAIR --> START_SVC
+  START_SVC["SyncService.start()\nначать обнаружение партнёра"] --> TASK_LIST
+
+  NOTE1["QR payload:\n{ deviceId, displayName, color }"]
+  QR_SHOW -.->|"кодирует"| NOTE1
+  QR_SCAN -.->|"декодирует"| NOTE1
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  FamilyTasks · Clean Architecture · P2P WiFi Sync · minSdk 26 · targetSdk 35
+</footer>
+
+<script>
+mermaid.initialize({
+  startOnLoad: false,
+  securityLevel: 'loose',
+  fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif'
+});
+
+// ── Zoom / Pan controller ──────────────────────────────────────
+class DiagramController {
+  constructor(wrap) {
+    this.wrap = wrap;
+    this.viewport = wrap.querySelector('.diagram-viewport');
+    this.inner = wrap.querySelector('.diagram-inner');
+    this.pctLabel = wrap.querySelector('.zoom-pct');
+
+    this.scale = 1;
+    this.tx = 0;
+    this.ty = 0;
+    this.dragging = false;
+    this.startX = 0;
+    this.startY = 0;
+    this.startTx = 0;
+    this.startTy = 0;
+
+    this._bindEvents();
+    this._bindButtons();
+  }
+
+  _applyTransform() {
+    this.inner.style.transform =
+      `translate(${this.tx}px, ${this.ty}px) scale(${this.scale})`;
+    if (this.pctLabel) {
+      this.pctLabel.textContent = Math.round(this.scale * 100) + '%';
+    }
+  }
+
+  _clampScale(s) {
+    return Math.min(Math.max(s, 0.08), 8);
+  }
+
+  // Zoom toward a point (cx, cy) in viewport coordinates
+  _zoomAt(cx, cy, factor) {
+    const newScale = this._clampScale(this.scale * factor);
+    const ratio = newScale / this.scale;
+    this.tx = cx - ratio * (cx - this.tx);
+    this.ty = cy - ratio * (cy - this.ty);
+    this.scale = newScale;
+    this._applyTransform();
+  }
+
+  reset() {
+    this.scale = 1;
+    this.tx = 0;
+    this.ty = 0;
+    this._applyTransform();
+  }
+
+  zoomIn()  { const r = this.viewport.getBoundingClientRect(); this._zoomAt(r.width/2, r.height/2, 1.25); }
+  zoomOut() { const r = this.viewport.getBoundingClientRect(); this._zoomAt(r.width/2, r.height/2, 1/1.25); }
+
+  _bindButtons() {
+    this.wrap.querySelectorAll('.zoom-btn').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        const action = btn.dataset.action;
+        if (action === 'in')    this.zoomIn();
+        if (action === 'out')   this.zoomOut();
+        if (action === 'reset') this.reset();
+      });
+    });
+  }
+
+  _bindEvents() {
+    const vp = this.viewport;
+
+    // Mouse wheel — zoom toward cursor
+    vp.addEventListener('wheel', e => {
+      e.preventDefault();
+      const rect = vp.getBoundingClientRect();
+      const cx = e.clientX - rect.left;
+      const cy = e.clientY - rect.top;
+      const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+      this._zoomAt(cx, cy, factor);
+    }, { passive: false });
+
+    // Mouse drag — pan
+    vp.addEventListener('mousedown', e => {
+      if (e.button !== 0) return;
+      this.dragging = true;
+      this.startX  = e.clientX;
+      this.startY  = e.clientY;
+      this.startTx = this.tx;
+      this.startTy = this.ty;
+      vp.style.cursor = 'grabbing';
+      e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', e => {
+      if (!this.dragging) return;
+      this.tx = this.startTx + (e.clientX - this.startX);
+      this.ty = this.startTy + (e.clientY - this.startY);
+      this._applyTransform();
+    });
+
+    document.addEventListener('mouseup', () => {
+      if (!this.dragging) return;
+      this.dragging = false;
+      vp.style.cursor = 'grab';
+    });
+
+    // Double-click — reset
+    vp.addEventListener('dblclick', () => this.reset());
+
+    // Touch — pinch zoom + drag
+    let lastDist = null;
+    let lastTouchX = 0, lastTouchY = 0;
+
+    vp.addEventListener('touchstart', e => {
+      if (e.touches.length === 2) {
+        lastDist = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+      } else if (e.touches.length === 1) {
+        lastTouchX = e.touches[0].clientX;
+        lastTouchY = e.touches[0].clientY;
+      }
+    }, { passive: true });
+
+    vp.addEventListener('touchmove', e => {
+      e.preventDefault();
+      if (e.touches.length === 2) {
+        const dist = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+        if (lastDist) {
+          const rect = vp.getBoundingClientRect();
+          const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left;
+          const cy = (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top;
+          this._zoomAt(cx, cy, dist / lastDist);
+        }
+        lastDist = dist;
+      } else if (e.touches.length === 1) {
+        const dx = e.touches[0].clientX - lastTouchX;
+        const dy = e.touches[0].clientY - lastTouchY;
+        this.tx += dx;
+        this.ty += dy;
+        lastTouchX = e.touches[0].clientX;
+        lastTouchY = e.touches[0].clientY;
+        this._applyTransform();
+      }
+    }, { passive: false });
+
+    vp.addEventListener('touchend', () => { lastDist = null; }, { passive: true });
+  }
+}
+
+// ── Init after Mermaid renders ────────────────────────────────
+mermaid.run({ querySelector: '.mermaid' }).then(() => {
+  // Fix SVG sizing: remove Mermaid's inline max-width so transform drives scale
+  document.querySelectorAll('.diagram-inner svg').forEach(svg => {
+    svg.style.maxWidth = 'none';
+    svg.removeAttribute('width');
+    // Keep height="auto" so aspect ratio is preserved
+    if (svg.getAttribute('height') && !svg.getAttribute('height').includes('%')) {
+      svg.removeAttribute('height');
+    }
+  });
+
+  // Attach controller to every diagram-wrap
+  document.querySelectorAll('.diagram-wrap').forEach(wrap => {
+    new DiagramController(wrap);
+  });
+});
+</script>
+</body>
+</html>
