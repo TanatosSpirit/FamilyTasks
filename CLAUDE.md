@@ -362,6 +362,25 @@ NanoHTTPD кладёт IP входящего подключения в заго�
 
 `triggerSync()` проверяет `syncState == SYNCING` и возвращается без действий, если синхронизация уже идёт. Оба устройства могут запустить scan одновременно и оба найти друг друга — без этой защиты возникает гонка.
 
+### Self-loop detection — защита от синка с собой
+
+**Сценарий:** устройство A хранит `peerIp = .3` (бывший IP устройства B). B уходит офлайн, освобождает `.3`. A получает `.3` через DHCP (при reconnect или тихом renewal). Теперь `peerIp == ownIp` — A стучится к себе.
+
+`peerIp` хранится **только в памяти** (`SyncManager` — `@Singleton`, не SharedPreferences), поэтому коллизия возможна исключительно в рамках текущей сессии сервиса.
+
+**Три слоя защиты** (реализованы в `SyncService.kt`):
+
+| Слой | Место | Когда ловит |
+|---|---|---|
+| IP-check | `ipTrackingCallback.onAvailable` | Reconnect: новый IP известен до wifiReceiver, race condition исключён |
+| IP-check | `ipTrackingCallback.onLinkPropertiesChanged` | DHCP renewal без разрыва — wifiReceiver вообще не срабатывает |
+| deviceId-check | `startKeepAlive` | Страховка: `identify()` вернул не `pairedDeviceId` |
+| deviceId-check | `triggerSync` (response) | Ловит race condition: `peerIp` был захвачен в локальную переменную до того, как IP-check успел вызвать `setPeerIp(null)` |
+
+**Почему проверка в `triggerSync` нужна отдельно:** `peerIp` читается в начале `triggerSync()` в локальную переменную, затем запускается `scope.launch { }`. Если `onAvailable` очистил `peerIp` в StateFlow между этими двумя точками, локальная переменная внутри корутины уже устарела — HTTP-запрос всё равно уйдёт на старый адрес. Проверка `response.deviceId == pairedDeviceId` ловит именно этот случай.
+
+**Поведение при self-loop:** A посылает POST /sync к себе. Сервер выполняет merge своих задач со своими же (tie-break по `updatedAt` — все unchanged, запись в БД не происходит). Ответ возвращает `deviceId = ownDeviceId`. Клиентская проверка видит `ownDeviceId != pairedDeviceId` → `peerIp = null` → scan. Данные не портятся.
+
 ### Механизмы восстановления peerIp
 
 Три независимых пути вернуть `peerIp` после потери:
@@ -442,3 +461,7 @@ AppLogger.e(TAG, "ошибка", throwable)
 | `triggerSync skipped — no peer IP, starting scan` | `SyncService` | D | Задача изменилась, пир не найден → запустили scan |
 | `triggerSync skipped — already syncing` | `SyncService` | D | Конкурентные вызовы sync |
 | `Peer unreachable: ... — clearing IP, starting scan` | `SyncService` | W | HTTP timeout: IP очищен, scan перезапущен |
+| `Own IP (...) matches peerIp — self-loop detected on connect, clearing peerIp, starting scan` | `SyncService` | W | DHCP дал нам IP бывшего партнёра при reconnect |
+| `New IP (...) matches peerIp — self-loop detected on IP change, clearing peerIp, starting scan` | `SyncService` | W | DHCP renewal без разрыва — IP сменился на peerIp |
+| `KeepAlive — unexpected deviceId ... at ... (expected ...) — self-loop?` | `SyncService` | W | keepAlive получил не pairedDeviceId — страховочный слой |
+| `Sync response from unexpected device ... at ... (expected ...) — self-loop? Clearing IP, starting scan` | `SyncService` | W | triggerSync поймал гонку: ответ пришёл от себя |

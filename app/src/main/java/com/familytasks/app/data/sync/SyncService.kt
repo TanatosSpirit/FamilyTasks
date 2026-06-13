@@ -70,6 +70,12 @@ class SyncService : Service() {
             val ip = allAddresses.firstOrNull { it.contains('.') } ?: return
             AppLogger.w(TAG, "WiFi connected, IP: $ip")
             prefs.lastKnownOwnIp = ip
+            val peerIp = syncManager.peerIp.value
+            if (peerIp != null && peerIp == ip) {
+                AppLogger.w(TAG, "Own IP ($ip) matches peerIp — self-loop detected on connect, clearing peerIp, starting scan")
+                syncManager.setPeerIp(null)
+                startSubnetScan()
+            }
         }
 
         override fun onLinkPropertiesChanged(network: Network, linkProperties: LinkProperties) {
@@ -80,6 +86,12 @@ class SyncService : Service() {
             if (newIp != prevIp) {
                 AppLogger.w(TAG, "Own IP changed: $prevIp → $newIp")
                 prefs.lastKnownOwnIp = newIp
+                val peerIp = syncManager.peerIp.value
+                if (peerIp != null && peerIp == newIp) {
+                    AppLogger.w(TAG, "New IP ($newIp) matches peerIp — self-loop detected on IP change, clearing peerIp, starting scan")
+                    syncManager.setPeerIp(null)
+                    startSubnetScan()
+                }
             }
         }
     }
@@ -218,9 +230,12 @@ class SyncService : Service() {
                     continue
                 }
                 val deviceId = httpClient.identify(peerIp, senderDeviceId = deviceIdManager.deviceId)
-                if (deviceId != null) {
+                if (deviceId == prefs.pairedDeviceId) {
                     AppLogger.d(TAG, "KeepAlive OK — peer still at $peerIp")
                 } else {
+                    if (deviceId != null) {
+                        AppLogger.w(TAG, "KeepAlive — unexpected deviceId ${deviceId.take(8)} at $peerIp (expected ${prefs.pairedDeviceId?.take(8)}) — self-loop?")
+                    }
                     AppLogger.i(TAG, "KeepAlive failed — peer IP stale, starting scan")
                     syncManager.setPeerIp(null)
                     startSubnetScan()
@@ -261,7 +276,7 @@ class SyncService : Service() {
                     devices = localDevices.map { it.toDto() }
                 )
                 val response = httpClient.sync(peerIp, 8080, payload)
-                if (response != null) {
+                if (response != null && response.deviceId == prefs.pairedDeviceId) {
                     syncUseCase.mergeAll(
                         response.tasks.map { it.toDomain() },
                         response.devices.map { it.toDomain() }
@@ -271,6 +286,11 @@ class SyncService : Service() {
                     syncManager.setLastSyncAt(now)
                     syncManager.setSyncState(SyncState.SUCCESS)
                     AppLogger.i(TAG, "Sync OK: sent ${localTasks.size}, received ${response.tasks.size}")
+                } else if (response != null) {
+                    AppLogger.w(TAG, "Sync response from unexpected device ${response.deviceId.take(8)} at $peerIp (expected ${prefs.pairedDeviceId?.take(8)}) — self-loop? Clearing IP, starting scan")
+                    syncManager.setPeerIp(null)
+                    syncManager.setSyncState(SyncState.ERROR)
+                    startSubnetScan()
                 } else {
                     syncManager.setSyncState(SyncState.ERROR)
                     AppLogger.w(TAG, "Sync failed: null response from $peerIp")
