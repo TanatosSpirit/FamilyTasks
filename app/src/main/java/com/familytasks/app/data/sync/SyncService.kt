@@ -108,7 +108,21 @@ class SyncService : Service() {
                         AppLogger.i(TAG, "WiFi connected — starting subnet scan")
                         startSubnetScan()
                     } else {
-                        AppLogger.i(TAG, "WiFi connected — peer IP retained, skipping scan")
+                        scope.launch {
+                            val peerIp = syncManager.peerIp.value ?: run {
+                                if (scanJob?.isActive != true) startSubnetScan()
+                                return@launch
+                            }
+                            AppLogger.d(TAG, "WiFi reconnected — verifying peer IP $peerIp")
+                            val deviceId = httpClient.identify(peerIp, senderDeviceId = deviceIdManager.deviceId)
+                            if (deviceId == prefs.pairedDeviceId) {
+                                AppLogger.i(TAG, "WiFi reconnected — peer confirmed at $peerIp")
+                            } else {
+                                AppLogger.i(TAG, "WiFi reconnected — peer IP stale, clearing IP, starting scan")
+                                syncManager.setPeerIp(null)
+                                startSubnetScan()
+                            }
+                        }
                     }
                 }
                 !info.isConnectedOrConnecting -> {
