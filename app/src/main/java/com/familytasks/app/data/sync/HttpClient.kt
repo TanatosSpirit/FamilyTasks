@@ -26,8 +26,8 @@ class HttpClient @Inject constructor() {
         .build()
 
     private val scanClient = OkHttpClient.Builder()
-        .connectTimeout(1500, TimeUnit.MILLISECONDS)
-        .readTimeout(1500, TimeUnit.MILLISECONDS)
+        .connectTimeout(3000, TimeUnit.MILLISECONDS)
+        .readTimeout(3000, TimeUnit.MILLISECONDS)
         .build()
 
     private val json = Json { ignoreUnknownKeys = true }

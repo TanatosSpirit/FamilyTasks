@@ -11,7 +11,7 @@ import kotlinx.coroutines.flow.flow
 import javax.inject.Inject
 import javax.inject.Singleton
 
-private const val SCAN_CONCURRENCY = 10
+private const val SCAN_CONCURRENCY = 30
 
 @Singleton
 class SubnetScanner @Inject constructor(

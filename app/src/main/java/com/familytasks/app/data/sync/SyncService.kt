@@ -223,13 +223,24 @@ class SyncService : Service() {
     }
 
     private fun startSubnetScan() {
-        if (prefs.pairedDeviceId == null) return
-        if (!isWifiConnected()) return
+        if (prefs.pairedDeviceId == null) {
+            AppLogger.d(TAG, "startSubnetScan — no paired device, skipping")
+            return
+        }
+        if (!isWifiConnected()) {
+            AppLogger.d(TAG, "startSubnetScan — WiFi not connected, skipping")
+            return
+        }
         scanJob?.cancel()
         scanJob = scope.launch {
             AppLogger.i(TAG, "Subnet scan started")
             try {
-                val ip = subnetScanner.scan()
+                var ip = subnetScanner.scan()
+                if (ip == null) {
+                    AppLogger.d(TAG, "Scan attempt 1 found nothing — retrying in 5s")
+                    delay(5_000L)
+                    ip = subnetScanner.scan()
+                }
                 if (ip != null) {
                     syncManager.setPeerIp(ip)
                     triggerSync()
