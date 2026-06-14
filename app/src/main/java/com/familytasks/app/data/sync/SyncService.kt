@@ -114,9 +114,11 @@ class SyncService : Service() {
                                 return@launch
                             }
                             AppLogger.d(TAG, "WiFi reconnected — verifying peer IP $peerIp")
+                            delay(1_500L)
                             val deviceId = httpClient.identify(peerIp, senderDeviceId = deviceIdManager.deviceId)
                             if (deviceId == prefs.pairedDeviceId) {
                                 AppLogger.i(TAG, "WiFi reconnected — peer confirmed at $peerIp")
+                                triggerSync()
                             } else {
                                 AppLogger.i(TAG, "WiFi reconnected — peer IP stale, clearing IP, starting scan")
                                 syncManager.setPeerIp(null)

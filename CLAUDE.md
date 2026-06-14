@@ -84,8 +84,8 @@ ui/
 WiFi подключилось
   └─ wifiReceiver → если peerIp == null → SubnetScanner.scan()
                     если peerIp != null → GET /identify к сохранённому peerIp (проверка актуальности)
-                        ├─ ответ совпадает с pairedDeviceId → "peer confirmed" (scan не нужен)
-                        └─ ответ не совпадает / timeout → peerIp = null → SubnetScanner.scan()
+                        ├─ ответ совпадает с pairedDeviceId → "peer confirmed" → triggerSync()
+                        └─ ответ не совпадает / timeout (delay 1.5 сек перед вызовом) → peerIp = null → SubnetScanner.scan()
 
 WiFi отключилось
   └─ wifiReceiver → scanJob отменяется; peerIp НЕ очищается
@@ -455,9 +455,9 @@ AppLogger.e(TAG, "ошибка", throwable)
 | `Peer reached us from ... — saving IP` | `SyncService` | I | Партнёр нашёл нас через scan (входящий /sync) |
 | `Peer reached us from ... via keepAlive — saving IP` | `SyncService` | I | Партнёр восстановил наш IP пассивно через keepAlive |
 | `WiFi connected — starting subnet scan` | `SyncService` | I | peerIp был null → scan запущен при подключении |
-| `WiFi reconnected — verifying peer IP ...` | `SyncService` | D | peerIp есть → проверка одним /identify при каждом переподключении |
-| `WiFi reconnected — peer confirmed at ...` | `SyncService` | I | /identify подтвердил IP — scan не нужен |
-| `WiFi reconnected — peer IP stale, clearing IP, starting scan` | `SyncService` | I | /identify вернул не pairedDeviceId или timeout → scan |
+| `WiFi reconnected — verifying peer IP ...` | `SyncService` | D | peerIp есть → задержка 1.5 сек + проверка одним /identify |
+| `WiFi reconnected — peer confirmed at ...` | `SyncService` | I | /identify подтвердил IP → triggerSync() |
+| `WiFi reconnected — peer IP stale, clearing IP, starting scan` | `SyncService` | I | /identify вернул не pairedDeviceId или timeout → IP устарел → scan |
 | `WiFi disconnected` | `SyncService` | I | Потеря сети → scan отменён, peerIp сохранён |
 | `Boot completed — starting SyncService` | `BootReceiver` | I | Холодный старт по загрузке системы |
 | `Schedule notification [tag] in Nm` | `NotificationScheduler` | D | Выставление будильника через WorkManager |
