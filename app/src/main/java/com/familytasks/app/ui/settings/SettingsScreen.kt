@@ -1,5 +1,11 @@
 package com.familytasks.app.ui.settings
 
+import android.annotation.SuppressLint
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.PowerManager
+import android.provider.Settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -26,13 +32,21 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -112,6 +126,8 @@ fun SettingsScreen(
                 )
             }
             HorizontalDivider()
+            BatteryOptimizationSection()
+            HorizontalDivider()
             Text("Диагностика", style = MaterialTheme.typography.titleMedium)
             OutlinedButton(onClick = onLogs, modifier = Modifier.fillMaxWidth()) {
                 Text("Логи синхронизации")
@@ -133,6 +149,56 @@ fun SettingsScreen(
                 checked = state.notifyStatusChange,
                 onToggle = vm::setNotifyStatusChange
             )
+        }
+    }
+}
+
+@Composable
+private fun BatteryOptimizationSection() {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    fun isExempt(): Boolean {
+        val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+        return pm.isIgnoringBatteryOptimizations(context.packageName)
+    }
+
+    var exempt by remember { mutableStateOf(isExempt()) }
+
+    // Re-check on resume: the system dialog returns no result, so refresh status
+    // every time the screen comes back to the foreground.
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) exempt = isExempt()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    Text("Фоновая работа", style = MaterialTheme.typography.titleMedium)
+    Text(
+        if (exempt) {
+            "Оптимизация батареи отключена — приложение может отвечать партнёру в фоне."
+        } else {
+            "Включена оптимизация батареи. В заблокированном состоянии телефон может перестать " +
+                "отвечать партнёру. Отключите оптимизацию для надёжной синхронизации."
+        },
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+    if (!exempt) {
+        OutlinedButton(
+            onClick = {
+                @SuppressLint("BatteryLife")
+                val intent = Intent(
+                    Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                    Uri.parse("package:${context.packageName}")
+                )
+                context.startActivity(intent)
+            },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Отключить оптимизацию батареи")
         }
     }
 }

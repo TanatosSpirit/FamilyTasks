@@ -42,7 +42,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import javax.inject.Inject
 
-private const val KEEP_ALIVE_INTERVAL_MS = 60 * 60 * 1000L
+private const val HOUR_MS = 60 * 60 * 1000L
 
 @AndroidEntryPoint
 class SyncService : Service() {
@@ -255,7 +255,8 @@ class SyncService : Service() {
     private fun startKeepAlive() {
         keepAliveJob = scope.launch {
             while (isActive) {
-                delay(KEEP_ALIVE_INTERVAL_MS)
+                val msUntilNextHour = HOUR_MS - (System.currentTimeMillis() % HOUR_MS)
+            delay(if (msUntilNextHour < 5_000L) msUntilNextHour + HOUR_MS else msUntilNextHour)
                 val peerIp = syncManager.peerIp.value
                 if (peerIp == null) {
                     if (scanJob?.isActive != true) {
