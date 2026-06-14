@@ -247,6 +247,10 @@ class SyncService : Service() {
                     }
                     continue
                 }
+                if (!isWifiConnected()) {
+                    AppLogger.d(TAG, "KeepAlive — WiFi not connected, skipping")
+                    continue
+                }
                 val deviceId = httpClient.identify(peerIp, senderDeviceId = deviceIdManager.deviceId)
                 if (deviceId == prefs.pairedDeviceId) {
                     AppLogger.d(TAG, "KeepAlive OK — peer still at $peerIp")
