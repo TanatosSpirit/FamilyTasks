@@ -38,6 +38,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import javax.inject.Inject
 
 private const val KEEP_ALIVE_INTERVAL_MS = 60 * 60 * 1000L
@@ -59,6 +60,7 @@ class SyncService : Service() {
     private var httpServer: HttpServer? = null
     private var scanJob: Job? = null
     private var keepAliveJob: Job? = null
+    private val syncMutex = Mutex()
     private lateinit var connectivityManager: ConnectivityManager
 
     private val ipTrackingCallback = object : ConnectivityManager.NetworkCallback() {
@@ -276,11 +278,11 @@ class SyncService : Service() {
             if (scanJob?.isActive != true) startSubnetScan()
             return
         }
-        if (syncManager.syncState.value == SyncState.SYNCING) {
-            AppLogger.d(TAG, "triggerSync skipped — already syncing")
-            return
-        }
         scope.launch {
+            if (!syncMutex.tryLock()) {
+                AppLogger.d(TAG, "triggerSync skipped — already syncing")
+                return@launch
+            }
             AppLogger.i(TAG, "triggerSync → $peerIp")
             syncManager.setSyncState(SyncState.SYNCING)
             try {
@@ -319,6 +321,8 @@ class SyncService : Service() {
             } catch (e: Exception) {
                 AppLogger.e(TAG, "Sync error: ${e.message}", e)
                 syncManager.setSyncState(SyncState.ERROR)
+            } finally {
+                syncMutex.unlock()
             }
         }
     }
