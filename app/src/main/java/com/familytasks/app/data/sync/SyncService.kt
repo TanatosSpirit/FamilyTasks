@@ -36,6 +36,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -227,10 +228,15 @@ class SyncService : Service() {
         scanJob?.cancel()
         scanJob = scope.launch {
             AppLogger.i(TAG, "Subnet scan started")
-            val ip = subnetScanner.scan()
-            if (ip != null) {
-                syncManager.setPeerIp(ip)
-                triggerSync()
+            try {
+                val ip = subnetScanner.scan()
+                if (ip != null) {
+                    syncManager.setPeerIp(ip)
+                    triggerSync()
+                }
+            } catch (e: CancellationException) {
+                AppLogger.d(TAG, "Subnet scan cancelled")
+                throw e
             }
         }
     }

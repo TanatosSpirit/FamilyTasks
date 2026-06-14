@@ -135,6 +135,6 @@ AppLogger.i(TAG, "Scan complete — ... (${responded.get()} responded, ${wrongId
 |---|---|---|---|
 | ✅ Готово | Race condition в `triggerSync` | `SyncService.kt` | 279–285 |
 | ✅ Готово | KeepAlive без WiFi-guard | `SyncService.kt` | 248 |
-| 🟢 Низкий | `AppLogger.w` → `.i` для WiFi connected | `SyncService.kt` | 71 |
-| 🟢 Низкий | Тихая отмена скана без лога | `SyncService.kt` | 226–233 |
-| ⚪ Косметика | Non-atomic счётчики | `SubnetScanner.kt` | 30–43 |
+| 💬 Пожелание | `AppLogger.w` для WiFi connected — намеренно, чтобы IP выделялся среди I-сообщений | `SyncService.kt` | 71 |
+| ✅ Готово | Тихая отмена скана без лога | `SyncService.kt` | 226–233 |
+| ✅ Готово | Non-atomic счётчики | `SubnetScanner.kt` | 30–43 |

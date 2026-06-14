@@ -2,6 +2,7 @@ package com.familytasks.app.data.sync
 
 import com.familytasks.app.core.AppLogger
 import com.familytasks.app.core.PreferencesManager
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.firstOrNull
@@ -27,8 +28,8 @@ class SubnetScanner @Inject constructor(
         val subnet = ownIp.substringBeforeLast('.') + '.'
         AppLogger.i(TAG, "Scanning ${subnet}* for ${pairedDeviceId.take(8)}")
 
-        var responded = 0
-        var wrongId = 0
+        val responded = AtomicInteger(0)
+        val wrongId = AtomicInteger(0)
 
         val result = (1..254)
             .map { "$subnet$it" }
@@ -38,19 +39,19 @@ class SubnetScanner @Inject constructor(
                 flow {
                     val deviceId = httpClient.identify(ip)
                     if (deviceId != null) {
-                        responded++
+                        responded.incrementAndGet()
                         if (deviceId == pairedDeviceId) emit(ip)
-                        else wrongId++
+                        else wrongId.incrementAndGet()
                     }
                 }
             }
             .firstOrNull()
 
         if (result != null) {
-            AppLogger.i(TAG, "Peer found at $result ($responded hosts responded)")
+            AppLogger.i(TAG, "Peer found at $result (${responded.get()} hosts responded)")
         } else {
             AppLogger.i(TAG, "Scan complete — peer not on subnet ${subnet}* " +
-                "($responded responded, $wrongId wrong deviceId)")
+                "(${responded.get()} responded, ${wrongId.get()} wrong deviceId)")
         }
         return result
     }
