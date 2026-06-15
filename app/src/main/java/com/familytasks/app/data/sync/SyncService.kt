@@ -193,6 +193,10 @@ class SyncService : Service() {
                     incoming.devices.map { it.toDomain() }
                 )
 
+                val now = System.currentTimeMillis()
+                prefs.lastSyncAt = now
+                syncManager.setLastSyncAt(now)
+
                 SyncPayload(
                     deviceId = deviceIdManager.deviceId,
                     tasks = localTasks.map { it.toDto() },
