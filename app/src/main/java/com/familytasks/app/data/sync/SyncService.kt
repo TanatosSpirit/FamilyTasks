@@ -79,12 +79,12 @@ class SyncService : Service() {
             if (ip != null && peerIp != null && peerIp == ip) {
                 AppLogger.w(TAG, "Own IP ($ip) matches peerIp — self-loop detected on connect, clearing peerIp, starting scan")
                 syncManager.setPeerIp(null)
-                startSubnetScan()
+                startSubnetScan(network)
                 return
             }
             if (peerIp == null) {
                 AppLogger.i(TAG, "WiFi connected — starting subnet scan")
-                startSubnetScan()
+                startSubnetScan(network)
             } else {
                 scope.launch {
                     AppLogger.d(TAG, "WiFi reconnected — verifying peer IP $peerIp")
@@ -221,12 +221,12 @@ class SyncService : Service() {
         return caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
     }
 
-    private fun startSubnetScan() {
+    private fun startSubnetScan(confirmedNetwork: Network? = null) {
         if (prefs.pairedDeviceId == null) {
             AppLogger.d(TAG, "startSubnetScan — no paired device, skipping")
             return
         }
-        if (!isWifiConnected()) {
+        if (confirmedNetwork == null && !isWifiConnected()) {
             AppLogger.d(TAG, "startSubnetScan — WiFi not connected, skipping")
             return
         }
@@ -256,16 +256,16 @@ class SyncService : Service() {
             while (isActive) {
                 val msUntilNextHour = HOUR_MS - (System.currentTimeMillis() % HOUR_MS)
             delay(if (msUntilNextHour < 5_000L) msUntilNextHour + HOUR_MS else msUntilNextHour)
+                if (!isWifiConnected()) {
+                    AppLogger.d(TAG, "KeepAlive — WiFi not connected, skipping")
+                    continue
+                }
                 val peerIp = syncManager.peerIp.value
                 if (peerIp == null) {
                     if (scanJob?.isActive != true) {
                         AppLogger.d(TAG, "KeepAlive — no peer IP, starting scan")
                         startSubnetScan()
                     }
-                    continue
-                }
-                if (!isWifiConnected()) {
-                    AppLogger.d(TAG, "KeepAlive — WiFi not connected, skipping")
                     continue
                 }
                 val deviceId = httpClient.identify(peerIp, senderDeviceId = deviceIdManager.deviceId)

@@ -416,7 +416,7 @@ NanoHTTPD кладёт IP входящего подключения в заго�
 
 Guard `scanJob?.isActive != true` в первых двух путях не даёт запустить параллельный scan, если он уже идёт.
 
-`startSubnetScan()` дополнительно проверяет `isWifiConnected()` через `ConnectivityManager.getNetworkCapabilities()` — scan не запускается, если WiFi недоступен. Это предотвращает бесполезные scan-циклы после отключения сети, когда задача изменилась или сработал keepAlive при `peerIp == null`.
+`startSubnetScan(confirmedNetwork: Network? = null)` — опциональный параметр `confirmedNetwork` передаётся из `onAvailable`. Если он не `null`, guard `isWifiConnected()` пропускается: мы уже знаем, что сеть есть, потому что это коллбэк от `NetworkCallback`, зарегистрированного только на `TRANSPORT_WIFI`. Без этого параметра `onAvailable` вызывает `startSubnetScan()`, а `isWifiConnected()` внутри смотрит на `activeNetwork`, который в момент `onAvailable` ещё не переключился — race condition, при которой scan проваливается. Когда `confirmedNetwork == null` (вызов из keepAlive, triggerSync и др.), `isWifiConnected()` по-прежнему используется как guard против запуска scan при отключённом WiFi.
 
 ### MergeTasksUseCase — точечный upsert только изменившихся задач
 
