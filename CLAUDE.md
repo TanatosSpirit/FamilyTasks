@@ -82,10 +82,12 @@ ui/
 
 ```
 WiFi подключилось
-  └─ wifiReceiver → если peerIp == null → SubnetScanner.scan()
-                    если peerIp != null → GET /identify к сохранённому peerIp (проверка актуальности)
-                        ├─ ответ совпадает с pairedDeviceId → "peer confirmed" → triggerSync()
-                        └─ ответ не совпадает / timeout (delay 1.5 сек перед вызовом) → peerIp = null → SubnetScanner.scan()
+  └─ ipTrackingCallback.onAvailable → если peerIp == null → SubnetScanner.scan()
+                                      если peerIp != null → GET /identify к сохранённому peerIp (проверка актуальности)
+                                          ├─ ответ совпадает с pairedDeviceId → "peer confirmed" → triggerSync()
+                                          └─ ответ не совпадает / timeout (delay 1.5 сек перед вызовом) → peerIp = null → SubnetScanner.scan()
+       (wifiReceiver при isConnected больше не используется: NETWORK_STATE_CHANGED_ACTION срабатывает
+        раньше, чем ConnectivityManager регистрирует сеть — isWifiConnected() возвращал false)
 
 WiFi отключилось
   └─ wifiReceiver → scanJob отменяется; peerIp НЕ очищается
@@ -393,8 +395,8 @@ NanoHTTPD кладёт IP входящего подключения в заго�
 
 | Слой | Место | Когда ловит |
 |---|---|---|
-| IP-check | `ipTrackingCallback.onAvailable` | Reconnect: новый IP известен до wifiReceiver, race condition исключён |
-| IP-check | `ipTrackingCallback.onLinkPropertiesChanged` | DHCP renewal без разрыва — wifiReceiver вообще не срабатывает |
+| IP-check | `ipTrackingCallback.onAvailable` | WiFi connected: IP проверяется до запуска scan/verify — self-loop обнаруживается раньше любого исходящего запроса |
+| IP-check | `ipTrackingCallback.onLinkPropertiesChanged` | DHCP renewal без разрыва — onAvailable не срабатывает |
 | deviceId-check | `startKeepAlive` | Страховка: `identify()` вернул не `pairedDeviceId` |
 | deviceId-check | `triggerSync` (response) | Ловит race condition: `peerIp` был захвачен в локальную переменную до того, как IP-check успел вызвать `setPeerIp(null)` |
 
