@@ -416,6 +416,16 @@ NanoHTTPD кладёт IP входящего подключения в заго�
 
 Guard `scanJob?.isActive != true` в первых двух путях не даёт запустить параллельный scan, если он уже идёт.
 
+### Перезапись устаревшего peerIp без scan
+
+`onSyncRequest` и `onPeerIdentified` обновляют `peerIp` не только когда он `null`, но и когда `senderIp` отличается от текущего `peerIp`. Условие было `peerIp == null`, стало `peerIp != senderIp`.
+
+**Зачем:** если IP партнёра изменился (DHCP renewal), а он уже дошёл до нас через входящий `/sync` или keepAlive — мы сразу обновляем `peerIp` и отменяем текущий scan (`scanJob?.cancel()`). Без этого мы бы продолжили scan до конца (или до таймаута keepAlive), хотя партнёр уже известен.
+
+**Безопасность обновления:** `incoming.deviceId == prefs.pairedDeviceId` (в `/sync`) и `callerDeviceId == prefs.pairedDeviceId` (в `onPeerIdentified`) гарантируют, что IP перезаписывается только от сопряжённого устройства.
+
+**`startKeepAlive` не меняли:** он не сохраняет `peerIp` — он его проверяет (отправляет `/identify?deviceId=` к текущему `peerIp`). При провале проверки `peerIp` очищается и запускается scan, как прежде.
+
 `startSubnetScan(confirmedNetwork: Network? = null)` — опциональный параметр `confirmedNetwork` передаётся из `onAvailable`. Если он не `null`, guard `isWifiConnected()` пропускается: мы уже знаем, что сеть есть, потому что это коллбэк от `NetworkCallback`, зарегистрированного только на `TRANSPORT_WIFI`. Без этого параметра `onAvailable` вызывает `startSubnetScan()`, а `isWifiConnected()` внутри смотрит на `activeNetwork`, который в момент `onAvailable` ещё не переключился — race condition, при которой scan проваливается. Когда `confirmedNetwork == null` (вызов из keepAlive, triggerSync и др.), `isWifiConnected()` по-прежнему используется как guard против запуска scan при отключённом WiFi.
 
 ### MergeTasksUseCase — точечный upsert только изменившихся задач

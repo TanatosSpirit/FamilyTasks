@@ -173,11 +173,17 @@ class SyncService : Service() {
             port = 8080,
             ownDeviceId = deviceIdManager.deviceId,
             onSyncRequest = { incoming, senderIp ->
-                if (senderIp.isNotEmpty() && incoming.deviceId == prefs.pairedDeviceId
-                    && syncManager.peerIp.value == null
-                ) {
-                    AppLogger.i(TAG, "Peer reached us from $senderIp — saving IP")
-                    syncManager.setPeerIp(senderIp)
+                if (senderIp.isNotEmpty() && incoming.deviceId == prefs.pairedDeviceId) {
+                    val currentPeerIp = syncManager.peerIp.value
+                    if (currentPeerIp != senderIp) {
+                        if (currentPeerIp == null) {
+                            AppLogger.i(TAG, "Peer reached us from $senderIp — saving IP")
+                        } else {
+                            AppLogger.i(TAG, "Peer IP changed: $currentPeerIp → $senderIp (via /sync)")
+                        }
+                        syncManager.setPeerIp(senderIp)
+                        scanJob?.cancel()
+                    }
                 }
 
                 val localTasks = syncUseCase.getLocalSnapshot()
@@ -199,10 +205,18 @@ class SyncService : Service() {
                 )
             },
             onPeerIdentified = { callerDeviceId, senderIp ->
-                if (callerDeviceId == prefs.pairedDeviceId && syncManager.peerIp.value == null) {
-                    AppLogger.i(TAG, "Peer reached us from $senderIp via keepAlive — saving IP")
-                    syncManager.setPeerIp(senderIp)
-                    scope.launch { triggerSync() }
+                if (callerDeviceId == prefs.pairedDeviceId) {
+                    val currentPeerIp = syncManager.peerIp.value
+                    if (currentPeerIp != senderIp) {
+                        if (currentPeerIp == null) {
+                            AppLogger.i(TAG, "Peer reached us from $senderIp via keepAlive — saving IP")
+                        } else {
+                            AppLogger.i(TAG, "Peer IP changed: $currentPeerIp → $senderIp (via keepAlive)")
+                        }
+                        syncManager.setPeerIp(senderIp)
+                        scanJob?.cancel()
+                        scope.launch { triggerSync() }
+                    }
                 }
             }
         ).also {
