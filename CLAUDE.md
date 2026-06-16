@@ -84,13 +84,15 @@ ui/
 WiFi подключилось
   └─ ipTrackingCallback.onAvailable → если peerIp == null → SubnetScanner.scan()
                                       если peerIp != null → GET /identify к сохранённому peerIp (проверка актуальности)
-                                          ├─ ответ совпадает с pairedDeviceId → "peer confirmed" → triggerSync()
-                                          └─ ответ не совпадает / timeout (delay 1.5 сек перед вызовом) → peerIp = null → SubnetScanner.scan()
+                                          (delay 1.5 сек перед первой попыткой, затем до 3 попыток с паузой 3 сек —
+                                           см. «WiFi reconnected — verify retry»)
+                                          ├─ любая попытка совпала с pairedDeviceId → "peer confirmed" → triggerSync()
+                                          └─ все 3 попытки провалились → peerIp = null → SubnetScanner.scan()
        (wifiReceiver при isConnected больше не используется: NETWORK_STATE_CHANGED_ACTION срабатывает
         раньше, чем ConnectivityManager регистрирует сеть — isWifiConnected() возвращал false)
 
 WiFi отключилось
-  └─ wifiReceiver → scanJob отменяется; peerIp НЕ очищается
+  └─ wifiReceiver → scanJob и verifyJob отменяются; peerIp НЕ очищается
        (при переподключении к той же сети triggerSync сразу попробует сохранённый IP)
        (если IP устарел → PeerUnreachableException очистит его и запустит scan)
 
@@ -387,9 +389,15 @@ NanoHTTPD кладёт IP входящего подключения в заго�
 
 `flatMapMerge(concurrency = 10)` + `firstOrNull()` — как только найден нужный IP, коллектор отменяется и все 10 параллельных запросов прекращаются. Незавершённые OkHttp-вызовы отпускают потоки после истечения таймаута scanClient (≤1.5 сек). Требует `@OptIn(ExperimentalCoroutinesApi::class)`.
 
+### startSubnetScan — до 3 попыток scan
+
+`startSubnetScan()` делает до **3 попыток** `subnetScanner.scan()` с паузой 5 с между ними (раньше было 2). Как только одна из попыток нашла IP — остальные не запускаются.
+
+**Зачем третья попытка:** обнаружено по логам — сразу после reconnect (особенно после роуминга между точками mesh-сети) локальная сеть может несколько десятков секунд не быть полностью готова: ARP/маршрутизация ещё не устоялись, и scan по всей подсети не получает ни одного ответа, хотя партнёр физически на месте и не покидал сеть. Двух попыток (~45 сек суммарно) иногда не хватало, чтобы переждать это окно — третья попытка покрывает более долгую нестабильность без ожидания следующего триггера (до часа на keepAlive).
+
 ### startSubnetScan — PARTIAL_WAKE_LOCK на время scan
 
-`startSubnetScan()` держит `PowerManager.PARTIAL_WAKE_LOCK` ("FamilyTasks:scan") на всё время своей корутины: обе попытки `subnetScanner.scan()` и 5-секундную паузу между ними. `acquire(60_000L)` — защитный потолок на случай, если что-то в коде зависнет и `finally` не отработает вовремя; обычный scan укладывается в доли от этого времени. Освобождается в `finally`, включая путь через `CancellationException`.
+`startSubnetScan()` держит `PowerManager.PARTIAL_WAKE_LOCK` ("FamilyTasks:scan") на всё время своей корутины: все попытки `subnetScanner.scan()` и паузы между ними. `acquire(120_000L)` — защитный потолок на случай, если что-то в коде зависнет и `finally` не отработает вовремя; обычный scan укладывается в доли от этого времени. Потолок увеличен с 60 до 120 сек при переходе на 3 попытки — 3 полных безответных скана (~21–27 сек каждый по логам) плюс 2 паузы по 5 сек уже подбираются к 60 сек впритык, и WakeLock не должен истекать раньше, чем закончится легитимный (хоть и медленный) scan. Освобождается в `finally`, включая путь через `CancellationException`.
 
 **Зачем:** обнаружено по логам — `AlarmManager.setExactAndAllowWhileIdle()` гарантирует доставку keepAlive-будильника, но не защищает корутину `scope.launch`, запущенную дальше. Без WakeLock устройство может уйти в Doze посреди уже выполняющегося scan: CPU и сеть замораживаются, OkHttp-вызовы зависают, и scan, который обычно укладывается в ~5–40 сек, может растянуться на несколько минут (зафиксирован случай 308 сек вместо ожидаемых ~21 сек). WakeLock не снимает сетевые ограничения Doze сам по себе, но удерживает CPU активным — таймауты `scanClient` (1.5 сек) срабатывают по расписанию вместо непредсказуемого зависания.
 
@@ -449,6 +457,14 @@ Guard `scanJob?.isActive != true` в первых двух путях не да�
 **Зачем retry:** WiFi power-save может поглощать первый TCP SYN, пока радио «дремлет» между beacon. Первый пакет будит Б, но timeout scanClient (1.5 сек) уже истёк. Вторая попытка через 3 секунды застаёт Б уже активным. Без retry это превращалось в ненужный полный scan.
 
 В начале каждого `performKeepAlive()` логируется снимок состояния устройства (`KeepAlive diag:`): `PowerManager.isDeviceIdleMode`, `isIgnoringBatteryOptimizations`, статус WiFi, наличие активной WiFi-сети, собственный IP, текущий peerIp. Это позволяет понять, в каком состоянии было устройство в момент, когда партнёр не смог до него дозвониться.
+
+### WiFi reconnected — verify retry и отмена verifyJob
+
+Ветка `peerIp != null` в `ipTrackingCallback.onAvailable` делает то же, что `performKeepAlive`: до **3 попыток** `/identify` к сохранённому `peerIp` с паузой 3 с между ними (раньше было одна попытка после задержки 1.5 сек). Только если все три не вернули `pairedDeviceId` — IP считается устаревшим и запускается scan.
+
+**Зачем:** обнаружено по логам — сразу после reconnect (характерно для mesh-сетей, где идёт роуминг между точками) единичный сетевой глитч мог обнулить полностью валидный `peerIp` и заставить устройство уйти в полный subnet scan вместо мгновенного `triggerSync()`. Retry с той же логикой, что уже доказала себя в `performKeepAlive`, переживает этот глитч без лишнего scan.
+
+Корутина с этим retry-циклом теперь хранится в `verifyJob` (аналогично `scanJob`) и отменяется в `wifiReceiver` при `WiFi disconnected` и в `onDestroy()`. Раньше она ничем не отслеживалась: если WiFi отваливался посреди верификации, корутина продолжала достукиваться до уже мёртвой сети вместо немедленной отмены.
 
 ### MergeTasksUseCase — точечный upsert только изменившихся задач
 
@@ -510,9 +526,10 @@ AppLogger.e(TAG, "ошибка", throwable)
 | `Peer reached us from ... — saving IP` | `SyncService` | I | Партнёр нашёл нас через scan (входящий /sync) |
 | `Peer reached us from ... via keepAlive — saving IP` | `SyncService` | I | Партнёр восстановил наш IP пассивно через keepAlive |
 | `WiFi connected — starting subnet scan` | `SyncService` | I | peerIp был null → scan запущен при подключении |
-| `WiFi reconnected — verifying peer IP ...` | `SyncService` | D | peerIp есть → задержка 1.5 сек + проверка одним /identify |
-| `WiFi reconnected — peer confirmed at ...` | `SyncService` | I | /identify подтвердил IP → triggerSync() |
-| `WiFi reconnected — peer IP stale, clearing IP, starting scan` | `SyncService` | I | /identify вернул не pairedDeviceId или timeout → IP устарел → scan |
+| `WiFi reconnected — verifying peer IP ...` | `SyncService` | D | peerIp есть → задержка 1.5 сек + до 3 попыток /identify |
+| `WiFi reconnected — verify attempt N failed — retrying in 3s` | `SyncService` | D | Попытка N из 3 не вернула pairedDeviceId — ждём и пробуем ещё |
+| `WiFi reconnected — peer confirmed at ...` | `SyncService` | I | /identify подтвердил IP (на любой из 3 попыток) → triggerSync() |
+| `WiFi reconnected — peer IP stale, clearing IP, starting scan` | `SyncService` | I | Все 3 попытки /identify не вернули pairedDeviceId → IP устарел → scan |
 | `WiFi disconnected` | `SyncService` | I | Потеря сети → scan отменён, peerIp сохранён |
 | `Boot completed — starting SyncService` | `BootReceiver` | I | Холодный старт по загрузке системы |
 | `Schedule notification [tag] in Nm` | `NotificationScheduler` | D | Выставление будильника через WorkManager |

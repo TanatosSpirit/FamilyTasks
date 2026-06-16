@@ -62,6 +62,7 @@ class SyncService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var httpServer: HttpServer? = null
     private var scanJob: Job? = null
+    private var verifyJob: Job? = null
     private val syncMutex = Mutex()
     private lateinit var connectivityManager: ConnectivityManager
     private lateinit var powerManager: PowerManager
@@ -88,10 +89,18 @@ class SyncService : Service() {
                 AppLogger.i(TAG, "WiFi connected — starting subnet scan")
                 startSubnetScan(network)
             } else {
-                scope.launch {
+                verifyJob = scope.launch {
                     AppLogger.d(TAG, "WiFi reconnected — verifying peer IP $peerIp")
                     delay(1_500L)
-                    val deviceId = httpClient.identify(peerIp, senderDeviceId = deviceIdManager.deviceId)
+                    var deviceId: String? = null
+                    for (attempt in 1..3) {
+                        deviceId = httpClient.identify(peerIp, senderDeviceId = deviceIdManager.deviceId)
+                        if (deviceId == prefs.pairedDeviceId) break
+                        if (attempt < 3) {
+                            AppLogger.d(TAG, "WiFi reconnected — verify attempt $attempt failed — retrying in 3s")
+                            delay(3_000L)
+                        }
+                    }
                     if (deviceId == prefs.pairedDeviceId) {
                         AppLogger.i(TAG, "WiFi reconnected — peer confirmed at $peerIp")
                         triggerSync()
@@ -131,6 +140,7 @@ class SyncService : Service() {
             if (!info.isConnectedOrConnecting) {
                 AppLogger.i(TAG, "WiFi disconnected")
                 scanJob?.cancel()
+                verifyJob?.cancel()
             }
         }
     }
@@ -169,6 +179,7 @@ class SyncService : Service() {
         unregisterReceiver(wifiReceiver)
         httpServer?.stop()
         scanJob?.cancel()
+        verifyJob?.cancel()
     }
 
     private fun startHttpServer() {
@@ -250,14 +261,17 @@ class SyncService : Service() {
         scanJob?.cancel()
         scanJob = scope.launch {
             val wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "FamilyTasks:scan")
-            wakeLock.acquire(60_000L)
+            wakeLock.acquire(120_000L)
             AppLogger.i(TAG, "Subnet scan started")
             try {
-                var ip = subnetScanner.scan()
-                if (ip == null) {
-                    AppLogger.d(TAG, "Scan attempt 1 found nothing — retrying in 5s")
-                    delay(5_000L)
+                var ip: String? = null
+                for (attempt in 1..3) {
                     ip = subnetScanner.scan()
+                    if (ip != null) break
+                    if (attempt < 3) {
+                        AppLogger.d(TAG, "Scan attempt $attempt found nothing — retrying in 5s")
+                        delay(5_000L)
+                    }
                 }
                 if (ip != null) {
                     syncManager.setPeerIp(ip)
