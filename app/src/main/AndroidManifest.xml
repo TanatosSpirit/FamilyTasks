@@ -46,6 +46,10 @@
             android:exported="false" />
 
         <receiver
+            android:name=".data.sync.KeepAliveReceiver"
+            android:exported="false" />
+
+        <receiver
             android:name=".data.sync.BootReceiver"
             android:exported="true">
             <intent-filter>

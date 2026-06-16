@@ -62,7 +62,7 @@ data/
   local/         ← Room: TaskEntity, DeviceEntity, TaskDao, DeviceDao, AppDatabase
   repository/    ← TaskRepositoryImpl, DeviceRepositoryImpl
   sync/          ← HttpServer, HttpClient, SubnetScanner, SyncService,
-                    SyncManager, BootReceiver
+                    SyncManager, BootReceiver, KeepAliveReceiver
 
 notifications/   ← NotificationScheduler, DueNotificationWorker
 core/            ← DeviceIdManager, PreferencesManager, AppLogger
@@ -116,13 +116,16 @@ SubnetScanner.scan() — guard: если WiFi недоступен (isWifiConnec
        │              └─ SyncManager.setPeerIp(senderIp)  ← пир нашёл нас раньше
        │          └─ MergeTasksUseCase → ответ с локальными задачами
        │
-       └─ keepAlive (раз в час)
+       └─ keepAlive (AlarmManager.setExactAndAllowWhileIdle, раз в час на границе UTC-часа)
+           AlarmManager → KeepAliveReceiver.onReceive() → SyncService.ACTION_KEEPALIVE
+               → performKeepAlive(): сначала scheduleKeepAlive() (следующий час), потом работа:
            если peerIp != null:
                GET /identify?deviceId=... → peerIp
                ├─ OK  → IP актуален, ничего не делаем
                └─ fail → peerIp = null → SubnetScanner.scan()
            если peerIp == null && scan не запущен:
                └─ SubnetScanner.scan()
+           (срабатывает даже в Doze; после рестарта сервиса сигнал восстанавливается из onCreate → scheduleKeepAlive)
 
 Задача изменилась (debounce 3 сек):
   observeTaskChanges() → triggerSync()
@@ -240,11 +243,14 @@ CAMERA                        ← для сканирования QR
 
 ### Достижимость в фоне (Doze + Samsung One UI)
 
-Foreground Service **не выводит приложение из Doze** и не держит CPU/WiFi. Когда телефон заблокирован и неподвижен, наступает Doze: CPU уходит в suspend (accept-loop NanoHTTPD не выполняется), сеть для приложения замораживается, WiFi-радио уходит в power-save. Итог — заблокированный на часы телефон перестаёт отвечать партнёру на `/identify` и `/sync`. Симметрично страдает и отправитель: `keepAlive` — это `delay()` в корутине, в Doze таймер откладывается.
+Foreground Service **не выводит приложение из Doze** и не держит CPU/WiFi. Когда телефон заблокирован и неподвижен, наступает Doze: CPU уходит в suspend (accept-loop NanoHTTPD не выполняется), сеть для приложения замораживается, WiFi-радио уходит в power-save. Итог — заблокированный на часы телефон перестаёт отвечать партнёру на `/identify` и `/sync`.
+
+`keepAlive` реализован через `AlarmManager.setExactAndAllowWhileIdle()` — в отличие от `delay()` в корутине, этот будильник срабатывает даже в Doze. Каждое срабатывание выводит CPU и WiFi из сна на ~1–2 сек (один GET /identify), после чего устройство возвращается в Doze. Стоимость 8 пробуждений за ночь — порядка 0.3–0.5 мАч (на 4 порядка меньше MulticastLock).
 
 **Реализован уровень 1 (Doze whitelist, минимум по батарее).** Это сознательный выбор: `WifiLock`/`WakeLock` **не используются**, чтобы не возвращать постоянный расход батареи (ср. удалённый MulticastLock, ~600 мАч/сутки). Жёсткой гарантии «отклик в любую миллисекунду» нет — WiFi power-save может добавлять задержку на пробуждение или редкий обрыв входящего соединения. Если потребуется надёжнее — следующий шаг это `WifiLock(WIFI_MODE_FULL_HIGH_PERF)` (уровень 2) и постоянный partial `WakeLock` (уровень 3), оба ценой батареи.
 
 Что есть в коде:
+- `AlarmManager.setExactAndAllowWhileIdle()` для keepAlive — срабатывает в Doze, цепочка: `KeepAliveReceiver` → `SyncService.ACTION_KEEPALIVE` → `performKeepAlive()`.
 - `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` в манифесте.
 - Секция «Фоновая работа» в `SettingsScreen` — показывает статус `PowerManager.isIgnoringBatteryOptimizations()` и кнопку, открывающую системный диалог (`Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`). Статус перечитывается на `ON_RESUME` (диалог не возвращает результат).
 
@@ -397,7 +403,7 @@ NanoHTTPD кладёт IP входящего подключения в заго�
 |---|---|---|
 | IP-check | `ipTrackingCallback.onAvailable` | WiFi connected: IP проверяется до запуска scan/verify — self-loop обнаруживается раньше любого исходящего запроса |
 | IP-check | `ipTrackingCallback.onLinkPropertiesChanged` | DHCP renewal без разрыва — onAvailable не срабатывает |
-| deviceId-check | `startKeepAlive` | Страховка: `identify()` вернул не `pairedDeviceId` |
+| deviceId-check | `performKeepAlive` | Страховка: `identify()` вернул не `pairedDeviceId` |
 | deviceId-check | `triggerSync` (response) | Ловит race condition: `peerIp` был захвачен в локальную переменную до того, как IP-check успел вызвать `setPeerIp(null)` |
 
 **Почему проверка в `triggerSync` нужна отдельно:** `peerIp` читается в начале `triggerSync()` в локальную переменную, затем запускается `scope.launch { }`. Если `onAvailable` очистил `peerIp` в StateFlow между этими двумя точками, локальная переменная внутри корутины уже устарела — HTTP-запрос всё равно уйдёт на старый адрес. Проверка `response.deviceId == pairedDeviceId` ловит именно этот случай.
@@ -424,7 +430,7 @@ Guard `scanJob?.isActive != true` в первых двух путях не да�
 
 **Безопасность обновления:** `incoming.deviceId == prefs.pairedDeviceId` (в `/sync`) и `callerDeviceId == prefs.pairedDeviceId` (в `onPeerIdentified`) гарантируют, что IP перезаписывается только от сопряжённого устройства.
 
-**`startKeepAlive` не меняли:** он не сохраняет `peerIp` — он его проверяет (отправляет `/identify?deviceId=` к текущему `peerIp`). При провале проверки `peerIp` очищается и запускается scan, как прежде.
+**`performKeepAlive` не меняли:** он не сохраняет `peerIp` — он его проверяет (отправляет `/identify?deviceId=` к текущему `peerIp`). При провале проверки `peerIp` очищается и запускается scan, как прежде.
 
 `startSubnetScan(confirmedNetwork: Network? = null)` — опциональный параметр `confirmedNetwork` передаётся из `onAvailable`. Если он не `null`, guard `isWifiConnected()` пропускается: мы уже знаем, что сеть есть, потому что это коллбэк от `NetworkCallback`, зарегистрированного только на `TRANSPORT_WIFI`. Без этого параметра `onAvailable` вызывает `startSubnetScan()`, а `isWifiConnected()` внутри смотрит на `activeNetwork`, который в момент `onAvailable` ещё не переключился — race condition, при которой scan проваливается. Когда `confirmedNetwork == null` (вызов из keepAlive, triggerSync и др.), `isWifiConnected()` по-прежнему используется как guard против запуска scan при отключённом WiFi.
 

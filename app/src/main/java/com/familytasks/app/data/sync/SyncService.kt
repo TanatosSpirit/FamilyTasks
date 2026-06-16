@@ -1,8 +1,10 @@
 package com.familytasks.app.data.sync
 
+import android.app.AlarmManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -37,7 +39,6 @@ import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import javax.inject.Inject
@@ -60,7 +61,6 @@ class SyncService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var httpServer: HttpServer? = null
     private var scanJob: Job? = null
-    private var keepAliveJob: Job? = null
     private val syncMutex = Mutex()
     private lateinit var connectivityManager: ConnectivityManager
 
@@ -144,14 +144,15 @@ class SyncService : Service() {
             .build()
         connectivityManager.registerNetworkCallback(request, ipTrackingCallback)
         startHttpServer()
-        startKeepAlive()
+        scheduleKeepAlive()
         observeTaskChanges()
         registerReceiver(wifiReceiver, IntentFilter(WifiManager.NETWORK_STATE_CHANGED_ACTION))
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_SYNC_NOW) {
-            triggerSync()
+        when (intent?.action) {
+            ACTION_SYNC_NOW -> triggerSync()
+            ACTION_KEEPALIVE -> performKeepAlive()
         }
         return START_STICKY
     }
@@ -165,7 +166,6 @@ class SyncService : Service() {
         unregisterReceiver(wifiReceiver)
         httpServer?.stop()
         scanJob?.cancel()
-        keepAliveJob?.cancel()
     }
 
     private fun startHttpServer() {
@@ -265,34 +265,46 @@ class SyncService : Service() {
         }
     }
 
-    private fun startKeepAlive() {
-        keepAliveJob = scope.launch {
-            while (isActive) {
-                val msUntilNextHour = HOUR_MS - (System.currentTimeMillis() % HOUR_MS)
-            delay(if (msUntilNextHour < 5_000L) msUntilNextHour + HOUR_MS else msUntilNextHour)
-                if (!isWifiConnected()) {
-                    AppLogger.d(TAG, "KeepAlive — WiFi not connected, skipping")
-                    continue
-                }
-                val peerIp = syncManager.peerIp.value
-                if (peerIp == null) {
-                    if (scanJob?.isActive != true) {
-                        AppLogger.d(TAG, "KeepAlive — no peer IP, starting scan")
-                        startSubnetScan()
-                    }
-                    continue
-                }
-                val deviceId = httpClient.identify(peerIp, senderDeviceId = deviceIdManager.deviceId)
-                if (deviceId == prefs.pairedDeviceId) {
-                    AppLogger.d(TAG, "KeepAlive OK — peer still at $peerIp")
-                } else {
-                    if (deviceId != null) {
-                        AppLogger.w(TAG, "KeepAlive — unexpected deviceId ${deviceId.take(8)} at $peerIp (expected ${prefs.pairedDeviceId?.take(8)}) — self-loop?")
-                    }
-                    AppLogger.i(TAG, "KeepAlive failed — peer IP stale, starting scan")
-                    syncManager.setPeerIp(null)
+    private fun scheduleKeepAlive() {
+        val alarmManager = getSystemService(AlarmManager::class.java)
+        val intent = Intent(this, KeepAliveReceiver::class.java).apply {
+            action = ACTION_KEEPALIVE
+        }
+        val pendingIntent = PendingIntent.getBroadcast(
+            this, 0, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val now = System.currentTimeMillis()
+        val nextBoundary = now - (now % HOUR_MS) + HOUR_MS
+        val triggerAt = if (nextBoundary - now < 5_000L) nextBoundary + HOUR_MS else nextBoundary
+        alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
+    }
+
+    private fun performKeepAlive() {
+        scheduleKeepAlive()
+        scope.launch {
+            if (!isWifiConnected()) {
+                AppLogger.d(TAG, "KeepAlive — WiFi not connected, skipping")
+                return@launch
+            }
+            val peerIp = syncManager.peerIp.value
+            if (peerIp == null) {
+                if (scanJob?.isActive != true) {
+                    AppLogger.d(TAG, "KeepAlive — no peer IP, starting scan")
                     startSubnetScan()
                 }
+                return@launch
+            }
+            val deviceId = httpClient.identify(peerIp, senderDeviceId = deviceIdManager.deviceId)
+            if (deviceId == prefs.pairedDeviceId) {
+                AppLogger.d(TAG, "KeepAlive OK — peer still at $peerIp")
+            } else {
+                if (deviceId != null) {
+                    AppLogger.w(TAG, "KeepAlive — unexpected deviceId ${deviceId.take(8)} at $peerIp (expected ${prefs.pairedDeviceId?.take(8)}) — self-loop?")
+                }
+                AppLogger.i(TAG, "KeepAlive failed — peer IP stale, starting scan")
+                syncManager.setPeerIp(null)
+                startSubnetScan()
             }
         }
     }
@@ -406,5 +418,6 @@ class SyncService : Service() {
         const val CHANNEL_ID = "sync_service"
         const val NOTIFICATION_ID = 1
         const val ACTION_SYNC_NOW = "com.familytasks.app.SYNC_NOW"
+        const val ACTION_KEEPALIVE = "com.familytasks.app.KEEPALIVE"
     }
 }
