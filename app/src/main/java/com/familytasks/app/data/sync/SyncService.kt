@@ -19,6 +19,7 @@ import android.net.NetworkRequest
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import com.familytasks.app.R
 import com.familytasks.app.core.AppLogger
@@ -63,6 +64,7 @@ class SyncService : Service() {
     private var scanJob: Job? = null
     private val syncMutex = Mutex()
     private lateinit var connectivityManager: ConnectivityManager
+    private lateinit var powerManager: PowerManager
 
     private val ipTrackingCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) {
@@ -139,6 +141,7 @@ class SyncService : Service() {
         startForegroundCompat()
         AppLogger.i(TAG, "Service started")
         connectivityManager = getSystemService(ConnectivityManager::class.java)
+        powerManager = getSystemService(PowerManager::class.java)
         val request = NetworkRequest.Builder()
             .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
             .build()
@@ -246,6 +249,8 @@ class SyncService : Service() {
         }
         scanJob?.cancel()
         scanJob = scope.launch {
+            val wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "FamilyTasks:scan")
+            wakeLock.acquire(60_000L)
             AppLogger.i(TAG, "Subnet scan started")
             try {
                 var ip = subnetScanner.scan()
@@ -261,6 +266,8 @@ class SyncService : Service() {
             } catch (e: CancellationException) {
                 AppLogger.d(TAG, "Subnet scan cancelled")
                 throw e
+            } finally {
+                if (wakeLock.isHeld) wakeLock.release()
             }
         }
     }
@@ -280,9 +287,21 @@ class SyncService : Service() {
         alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
     }
 
+    private fun logDeviceState() {
+        val pm = getSystemService(PowerManager::class.java)
+        val wm = getSystemService(WifiManager::class.java)
+        val network = connectivityManager.activeNetwork
+        val caps = network?.let { connectivityManager.getNetworkCapabilities(it) }
+        val hasWifi = caps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ?: false
+        val isDoze = pm.isDeviceIdleMode
+        val battIgnored = pm.isIgnoringBatteryOptimizations(packageName)
+        AppLogger.i(TAG, "KeepAlive diag: doze=$isDoze battIgnored=$battIgnored wifiOn=${wm.isWifiEnabled} activeWifi=$hasWifi ownIp=${prefs.lastKnownOwnIp} peerIp=${syncManager.peerIp.value}")
+    }
+
     private fun performKeepAlive() {
         scheduleKeepAlive()
         scope.launch {
+            logDeviceState()
             if (!isWifiConnected()) {
                 AppLogger.d(TAG, "KeepAlive — WiFi not connected, skipping")
                 return@launch
@@ -295,7 +314,15 @@ class SyncService : Service() {
                 }
                 return@launch
             }
-            val deviceId = httpClient.identify(peerIp, senderDeviceId = deviceIdManager.deviceId)
+            var deviceId: String? = null
+            for (attempt in 1..3) {
+                deviceId = httpClient.identify(peerIp, senderDeviceId = deviceIdManager.deviceId)
+                if (deviceId == prefs.pairedDeviceId) break
+                if (attempt < 3) {
+                    AppLogger.d(TAG, "KeepAlive identify attempt $attempt failed — retrying in 3s")
+                    delay(3_000L)
+                }
+            }
             if (deviceId == prefs.pairedDeviceId) {
                 AppLogger.d(TAG, "KeepAlive OK — peer still at $peerIp")
             } else {

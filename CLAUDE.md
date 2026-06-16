@@ -387,6 +387,14 @@ NanoHTTPD кладёт IP входящего подключения в заго�
 
 `flatMapMerge(concurrency = 10)` + `firstOrNull()` — как только найден нужный IP, коллектор отменяется и все 10 параллельных запросов прекращаются. Незавершённые OkHttp-вызовы отпускают потоки после истечения таймаута scanClient (≤1.5 сек). Требует `@OptIn(ExperimentalCoroutinesApi::class)`.
 
+### startSubnetScan — PARTIAL_WAKE_LOCK на время scan
+
+`startSubnetScan()` держит `PowerManager.PARTIAL_WAKE_LOCK` ("FamilyTasks:scan") на всё время своей корутины: обе попытки `subnetScanner.scan()` и 5-секундную паузу между ними. `acquire(60_000L)` — защитный потолок на случай, если что-то в коде зависнет и `finally` не отработает вовремя; обычный scan укладывается в доли от этого времени. Освобождается в `finally`, включая путь через `CancellationException`.
+
+**Зачем:** обнаружено по логам — `AlarmManager.setExactAndAllowWhileIdle()` гарантирует доставку keepAlive-будильника, но не защищает корутину `scope.launch`, запущенную дальше. Без WakeLock устройство может уйти в Doze посреди уже выполняющегося scan: CPU и сеть замораживаются, OkHttp-вызовы зависают, и scan, который обычно укладывается в ~5–40 сек, может растянуться на несколько минут (зафиксирован случай 308 сек вместо ожидаемых ~21 сек). WakeLock не снимает сетевые ограничения Doze сам по себе, но удерживает CPU активным — таймауты `scanClient` (1.5 сек) срабатывают по расписанию вместо непредсказуемого зависания.
+
+**Чего это не покрывает:** только сторону, которая сканирует. Если партнёр не отвечает, потому что сам ушёл в глубокий Doze (WiFi-радио выключено), WakeLock сканирующего устройства это не лечит — нужна отдельная защита на принимающей стороне (`HttpServer`), которой пока нет. Также не покрывает `triggerSync()` и retry-цикл `identify()` в `performKeepAlive()` — оба запускают свою отдельную корутину и теоретически подвержены той же проблеме, но пока не подтверждены логами.
+
 ### triggerSync — защита от параллельных вызовов
 
 `triggerSync()` проверяет `syncState == SYNCING` и возвращается без действий, если синхронизация уже идёт. Оба устройства могут запустить scan одновременно и оба найти друг друга — без этой защиты возникает гонка.
@@ -395,7 +403,7 @@ NanoHTTPD кладёт IP входящего подключения в заго�
 
 **Сценарий:** устройство A хранит `peerIp = .3` (бывший IP устройства B). B уходит офлайн, освобождает `.3`. A получает `.3` через DHCP (при reconnect или тихом renewal). Теперь `peerIp == ownIp` — A стучится к себе.
 
-`peerIp` хранится **только в памяти** (`SyncManager` — `@Singleton`, не SharedPreferences), поэтому коллизия возможна исключительно в рамках текущей сессии сервиса.
+`peerIp` живёт как `StateFlow` в `SyncManager` (`@Singleton`), но при создании синглтона сидируется значением `prefs.lastKnownPeerIp` (`SyncManager.kt:13`) — то есть переживает рестарт процесса, а не только текущую сессию сервиса. Поэтому коллизия с устаревшим IP возможна и сразу после холодного старта, если последний сохранённый `peerIp` устарел. Все три слоя защиты ниже работают независимо от того, откуда взялось значение (восстановлено из prefs или получено в рантайме), так что на корректность это не влияет — только на формулировку "когда" коллизия возможна.
 
 **Три слоя защиты** (реализованы в `SyncService.kt`):
 
@@ -433,6 +441,14 @@ Guard `scanJob?.isActive != true` в первых двух путях не да�
 **`performKeepAlive` не меняли:** он не сохраняет `peerIp` — он его проверяет (отправляет `/identify?deviceId=` к текущему `peerIp`). При провале проверки `peerIp` очищается и запускается scan, как прежде.
 
 `startSubnetScan(confirmedNetwork: Network? = null)` — опциональный параметр `confirmedNetwork` передаётся из `onAvailable`. Если он не `null`, guard `isWifiConnected()` пропускается: мы уже знаем, что сеть есть, потому что это коллбэк от `NetworkCallback`, зарегистрированного только на `TRANSPORT_WIFI`. Без этого параметра `onAvailable` вызывает `startSubnetScan()`, а `isWifiConnected()` внутри смотрит на `activeNetwork`, который в момент `onAvailable` ещё не переключился — race condition, при которой scan проваливается. Когда `confirmedNetwork == null` (вызов из keepAlive, triggerSync и др.), `isWifiConnected()` по-прежнему используется как guard против запуска scan при отключённом WiFi.
+
+### performKeepAlive — retry identify и диагностика
+
+`performKeepAlive()` делает до **3 попыток** `/identify` к `peerIp` с паузой 3 с между ними. Только если все три вернули `null` или чужой deviceId — IP объявляется устаревшим и запускается scan.
+
+**Зачем retry:** WiFi power-save может поглощать первый TCP SYN, пока радио «дремлет» между beacon. Первый пакет будит Б, но timeout scanClient (1.5 сек) уже истёк. Вторая попытка через 3 секунды застаёт Б уже активным. Без retry это превращалось в ненужный полный scan.
+
+В начале каждого `performKeepAlive()` логируется снимок состояния устройства (`KeepAlive diag:`): `PowerManager.isDeviceIdleMode`, `isIgnoringBatteryOptimizations`, статус WiFi, наличие активной WiFi-сети, собственный IP, текущий peerIp. Это позволяет понять, в каком состоянии было устройство в момент, когда партнёр не смог до него дозвониться.
 
 ### MergeTasksUseCase — точечный upsert только изменившихся задач
 
@@ -486,8 +502,10 @@ AppLogger.e(TAG, "ошибка", throwable)
 | `Scanning 192.168.x.* for ...` | `SubnetScanner` | I | Начало scan — сколько раз запускается в сутки |
 | `Peer found at ...` | `SubnetScanner` | I | Успешный scan — как быстро нашли партнёра |
 | `Scan complete — peer not on subnet` | `SubnetScanner` | I | Партнёр офлайн — scan прошёл впустую |
+| `KeepAlive diag: doze=... battIgnored=... wifiOn=... activeWifi=... ownIp=... peerIp=...` | `SyncService` | I | Снимок состояния устройства в момент keepAlive: Doze-режим, исключение из батарейной оптимизации, статус WiFi, текущий IP |
+| `KeepAlive identify attempt N failed — retrying in 3s` | `SyncService` | D | Попытка N из 3 не вернула pairedDeviceId — ждём и пробуем ещё |
 | `KeepAlive OK — peer still at ...` | `SyncService` | D | Штатный keepAlive — IP не изменился |
-| `KeepAlive failed — peer IP stale` | `SyncService` | I | IP изменился → scan запущен |
+| `KeepAlive failed — peer IP stale` | `SyncService` | I | Все 3 попытки identify не вернули pairedDeviceId → IP устарел → scan |
 | `KeepAlive — no peer IP, starting scan` | `SyncService` | D | peerIp==null при срабатывании таймера → scan |
 | `Peer reached us from ... — saving IP` | `SyncService` | I | Партнёр нашёл нас через scan (входящий /sync) |
 | `Peer reached us from ... via keepAlive — saving IP` | `SyncService` | I | Партнёр восстановил наш IP пассивно через keepAlive |
