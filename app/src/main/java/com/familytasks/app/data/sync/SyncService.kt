@@ -200,13 +200,13 @@ class SyncService : Service() {
                     }
                 }
 
-                val localTasks = syncUseCase.getLocalSnapshot()
-                val localDevices = buildDevicesPayload()
-
                 syncUseCase.mergeAll(
                     incoming.tasks.map { it.toDomain() },
                     incoming.devices.map { it.toDomain() }
                 )
+
+                val localTasks = syncUseCase.getLocalSnapshot()
+                val localDevices = buildDevicesPayload()
 
                 val now = System.currentTimeMillis()
                 prefs.lastSyncAt = now
@@ -328,24 +328,30 @@ class SyncService : Service() {
                 }
                 return@launch
             }
-            var deviceId: String? = null
-            for (attempt in 1..3) {
-                deviceId = httpClient.identify(peerIp, senderDeviceId = deviceIdManager.deviceId)
-                if (deviceId == prefs.pairedDeviceId) break
-                if (attempt < 3) {
-                    AppLogger.d(TAG, "KeepAlive identify attempt $attempt failed — retrying in 3s")
-                    delay(3_000L)
+            val wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "FamilyTasks:keepAlive")
+            wakeLock.acquire(30_000L)
+            try {
+                var deviceId: String? = null
+                for (attempt in 1..3) {
+                    deviceId = httpClient.identify(peerIp, senderDeviceId = deviceIdManager.deviceId)
+                    if (deviceId == prefs.pairedDeviceId) break
+                    if (attempt < 3) {
+                        AppLogger.d(TAG, "KeepAlive identify attempt $attempt failed — retrying in 3s")
+                        delay(3_000L)
+                    }
                 }
-            }
-            if (deviceId == prefs.pairedDeviceId) {
-                AppLogger.d(TAG, "KeepAlive OK — peer still at $peerIp")
-            } else {
-                if (deviceId != null) {
-                    AppLogger.w(TAG, "KeepAlive — unexpected deviceId ${deviceId.take(8)} at $peerIp (expected ${prefs.pairedDeviceId?.take(8)}) — self-loop?")
+                if (deviceId == prefs.pairedDeviceId) {
+                    AppLogger.d(TAG, "KeepAlive OK — peer still at $peerIp")
+                } else {
+                    if (deviceId != null) {
+                        AppLogger.w(TAG, "KeepAlive — unexpected deviceId ${deviceId.take(8)} at $peerIp (expected ${prefs.pairedDeviceId?.take(8)}) — self-loop?")
+                    }
+                    AppLogger.i(TAG, "KeepAlive failed — peer IP stale, starting scan")
+                    syncManager.setPeerIp(null)
+                    startSubnetScan()
                 }
-                AppLogger.i(TAG, "KeepAlive failed — peer IP stale, starting scan")
-                syncManager.setPeerIp(null)
-                startSubnetScan()
+            } finally {
+                if (wakeLock.isHeld) wakeLock.release()
             }
         }
     }
