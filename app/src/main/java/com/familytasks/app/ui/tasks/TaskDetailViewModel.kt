@@ -2,6 +2,7 @@ package com.familytasks.app.ui.tasks
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.familytasks.app.core.AppLogger
 import com.familytasks.app.core.DeviceIdManager
 import com.familytasks.app.core.PreferencesManager
 import com.familytasks.app.domain.model.Device
@@ -54,13 +55,17 @@ class TaskDetailViewModel @Inject constructor(
             TaskStatus.DONE -> TaskStatus.TODO
         }
         val completedAt = if (next == TaskStatus.DONE) now else null
-        update(current.copy(status = next, updatedAt = now, completedAt = completedAt))
+        val updated = current.copy(status = next, updatedAt = now, completedAt = completedAt)
+        update(updated)
+        applyDueNotificationState(updated, "cycleStatus")
     }
 
     fun delete(onDone: () -> Unit) {
         val task = _task.value ?: return
         viewModelScope.launch {
             taskRepository.deleteTask(task.id, System.currentTimeMillis())
+            AppLogger.d(TAG, "delete: '${task.title}' deleted — cancelling due reminders")
+            notificationScheduler.cancelDueNotifications(task.id)
             launch(kotlinx.coroutines.Dispatchers.Main) { onDone() }
         }
     }
@@ -76,12 +81,25 @@ class TaskDetailViewModel @Inject constructor(
             val updated = task.copy(updatedAt = now, completedAt = completedAt)
             taskRepository.upsertTask(updated)
             _task.value = updated
-            if (updated.assignedTo == deviceIdManager.deviceId) {
-                notificationScheduler.scheduleDueNotifications(updated)
-            } else {
-                notificationScheduler.cancelDueNotifications(updated.id)
-            }
+            applyDueNotificationState(updated, "updateTask")
             launch(kotlinx.coroutines.Dispatchers.Main) { onDone() }
+        }
+    }
+
+    private fun applyDueNotificationState(updated: Task, source: String) {
+        val eligible = updated.assignedTo == deviceIdManager.deviceId &&
+            updated.status != TaskStatus.DONE &&
+            !updated.deleted
+        if (eligible) {
+            AppLogger.d(TAG, "$source: '${updated.title}' active and assigned to me — scheduling due reminders")
+            notificationScheduler.scheduleDueNotifications(updated)
+        } else {
+            AppLogger.d(
+                TAG,
+                "$source: '${updated.title}' not active+mine (assignedTo=${if (updated.assignedTo == deviceIdManager.deviceId) "me" else "other"}, " +
+                    "status=${updated.status}, deleted=${updated.deleted}) — cancelling due reminders"
+            )
+            notificationScheduler.cancelDueNotifications(updated.id)
         }
     }
 
@@ -93,4 +111,8 @@ class TaskDetailViewModel @Inject constructor(
     }
 
     val myDeviceId: String get() = deviceIdManager.deviceId
+
+    companion object {
+        private const val TAG = "TaskDetailViewModel"
+    }
 }

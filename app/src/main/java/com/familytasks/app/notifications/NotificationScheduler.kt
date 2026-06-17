@@ -32,8 +32,15 @@ class NotificationScheduler @Inject constructor(
     }
 
     fun scheduleDueNotifications(task: Task) {
-        if (!prefs.notifyDueDate) return
-        val dueDate = task.dueDate ?: return
+        if (!prefs.notifyDueDate) {
+            AppLogger.d(TAG, "scheduleDueNotifications skipped for '${task.title}' — reminders disabled in settings")
+            return
+        }
+        val dueDate = task.dueDate
+        if (dueDate == null) {
+            AppLogger.d(TAG, "scheduleDueNotifications skipped for '${task.title}' — no due date")
+            return
+        }
         val now = System.currentTimeMillis()
 
         val oneDayBefore = dueDate - TimeUnit.DAYS.toMillis(1)
@@ -46,6 +53,9 @@ class NotificationScheduler @Inject constructor(
                 "Осталось 1 день",
                 oneDayBefore - now
             )
+        } else {
+            AppLogger.d(TAG, "Day-before mark for '${task.title}' already in the past — cancelling any stale work")
+            cancelWork(task.id + "_day")
         }
         if (oneHourBefore > now) {
             scheduleNotificationWorker(
@@ -54,6 +64,9 @@ class NotificationScheduler @Inject constructor(
                 "Осталось 1 час",
                 oneHourBefore - now
             )
+        } else {
+            AppLogger.d(TAG, "Hour-before mark for '${task.title}' already in the past — cancelling any stale work")
+            cancelWork(task.id + "_hour")
         }
     }
 
@@ -74,9 +87,12 @@ class NotificationScheduler @Inject constructor(
 
     fun cancelDueNotifications(taskId: String) {
         AppLogger.d(TAG, "Cancel notifications for task ${taskId.take(8)}")
-        val wm = WorkManager.getInstance(context)
-        wm.cancelUniqueWork(taskId + "_day")
-        wm.cancelUniqueWork(taskId + "_hour")
+        cancelWork(taskId + "_day")
+        cancelWork(taskId + "_hour")
+    }
+
+    private fun cancelWork(tag: String) {
+        WorkManager.getInstance(context).cancelUniqueWork(tag)
     }
 
     private fun scheduleNotificationWorker(tag: String, title: String, text: String, delayMs: Long) {

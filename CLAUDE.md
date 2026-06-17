@@ -490,6 +490,25 @@ Merge done: +1 new, ~1 updated, =23 unchanged — writing 2/25 tasks to DB
 ```
 Дробь `2/25` = записанных строк / всего в таблице (активные + tombstone-ы).
 
+### Due-уведомления — отмена привязана к статусу/удалению, а не только к назначению
+
+`NotificationScheduler.scheduleDueNotifications()` / `cancelDueNotifications()` вызываются из трёх мест: `TaskDetailViewModel` (`cycleStatus`, `updateTask`, `delete`), `CreateTaskViewModel` (только создание, всегда `TODO`) и `MergeTasksUseCase` (входящий sync). До фикса 2026-06-17 решение «ставить или отменять» было привязано только к `assignedTo`:
+
+- `cycleStatus()` — быстрый тап по статусу в `TaskDetailScreen`, самый частый способ закрыть свою задачу — вообще не трогал `NotificationScheduler`.
+- `updateTask()` — отменял напоминания только если задача переназначена на другое устройство, не если она стала `done`.
+- `MergeTasksUseCase` — если партнёр закрыл/удалил мою задачу на своём устройстве и это пришло через `/sync`, локальные напоминания не отменялись вообще.
+
+`scheduleDueNotifications()` ставит `OneTimeWorkRequest` через `enqueueUniqueWork` — persistent-очередь WorkManager переживает рестарт процесса и сработает в заданное время **независимо от текущего статуса задачи**, если её явно не отменить через `cancelUniqueWork`.
+
+**Зачем фикс:** баг обнаружен по жалобе пользователя — на одном устройстве пришло уведомление "за сутки"/"за час" про задачу, закрытую задолго до этого. Воспроизводится, когда задача назначена на это устройство, у неё есть `dueDate` в будущем на момент назначения, и она была завершена **до** наступления отметки "за сутки"/"за час" — через `cycleStatus()` или через входящий sync от партнёра. Другие давно закрытые задачи на этом же пользователе не проявляли проблему, потому что их `dueDate` уже прошёл к моменту закрытия — оба воркера к тому времени либо уже отстрелялись (валидно, пока задача была ещё открыта), либо не ставились вовсе.
+
+Фикс:
+- `TaskDetailViewModel.cycleStatus()` и `updateTask()` теперь используют общий `applyDueNotificationState()`: ставит напоминания, только если `assignedTo == myDeviceId && status != DONE && !deleted`, иначе отменяет. `delete()` дополнительно вызывает `cancelDueNotifications()`.
+- `MergeTasksUseCase` (ветка `updated`) сравнивает `wasEligible`/`isEligible` (то же условие "назначена на меня + не done + не deleted") до и после merge — отменяет при переходе в неактивное состояние, переставляет при возврате в активное. Ветка `new` не ставит напоминания, если задача пришла уже `done`.
+- `NotificationScheduler.scheduleDueNotifications()` — если отметка "за день"/"за час" уже в прошлом, теперь явно вызывает `cancelUniqueWork` для этого тега (раньше просто ничего не делал, оставляя висеть воркер, поставленный раньше при более позднем `dueDate`).
+
+Каждое решение (schedule/cancel/skip) логируется через `AppLogger.d` — видно в Настройки → Диагностика → Логи синхронизации.
+
 ### observeTaskChanges — порядок операторов
 
 В `SyncService.observeTaskChanges()` операторы стоят в строгом порядке:
@@ -513,7 +532,7 @@ AppLogger.d(TAG, "сообщение")   // уровни: d / i / w / e
 AppLogger.e(TAG, "ошибка", throwable)
 ```
 
-Покрытые источники: `SyncService`, `HttpClient`, `HttpServer`, `SubnetScanner`, `MergeTasksUseCase`, `BootReceiver`, `NotificationScheduler`.
+Покрытые источники: `SyncService`, `HttpClient`, `HttpServer`, `SubnetScanner`, `MergeTasksUseCase`, `BootReceiver`, `NotificationScheduler`, `TaskDetailViewModel`.
 
 Доступ в UI: **Настройки → Диагностика → Логи синхронизации**. Там же кнопка Share — экспортирует лог в `familytasks_log.txt` через стандартный Android Share Sheet (FileProvider, `cache/logs/`).
 
