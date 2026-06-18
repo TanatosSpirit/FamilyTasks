@@ -79,7 +79,6 @@ class NotificationScheduler @Inject constructor(
         if (!prefs.notifyStatusChange) return
         val statusLabel = when (task.status.value) {
             "done" -> "выполнена"
-            "in_progress" -> "в процессе"
             else -> "обновлена"
         }
         showNotification(CH_STATUS, task.id.hashCode() + 1000, "Задача $statusLabel", task.title)

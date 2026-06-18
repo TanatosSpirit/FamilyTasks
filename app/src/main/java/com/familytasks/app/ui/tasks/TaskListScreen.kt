@@ -252,7 +252,6 @@ private fun TaskCard(
 private fun StatusBadge(status: TaskStatus) {
     val (text, color) = when (status) {
         TaskStatus.TODO -> "Новая" to Color(0xFF9E9E9E)
-        TaskStatus.IN_PROGRESS -> "В процессе" to Color(0xFF2196F3)
         TaskStatus.DONE -> "Готово" to Color(0xFF4CAF50)
     }
     Text(

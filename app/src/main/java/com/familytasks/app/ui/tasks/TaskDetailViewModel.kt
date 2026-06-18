@@ -50,8 +50,7 @@ class TaskDetailViewModel @Inject constructor(
         val current = _task.value ?: return
         val now = System.currentTimeMillis()
         val next = when (current.status) {
-            TaskStatus.TODO -> TaskStatus.IN_PROGRESS
-            TaskStatus.IN_PROGRESS -> TaskStatus.DONE
+            TaskStatus.TODO -> TaskStatus.DONE
             TaskStatus.DONE -> TaskStatus.TODO
         }
         val completedAt = if (next == TaskStatus.DONE) now else null

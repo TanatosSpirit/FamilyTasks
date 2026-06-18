@@ -176,8 +176,7 @@ private fun ViewTaskContent(
         Button(onClick = onCycleStatus, modifier = Modifier.fillMaxWidth()) {
             Text(
                 when (task.status) {
-                    TaskStatus.TODO -> "Начать выполнение"
-                    TaskStatus.IN_PROGRESS -> "Отметить выполненной"
+                    TaskStatus.TODO -> "Отметить выполненной"
                     TaskStatus.DONE -> "Вернуть в работу"
                 }
             )
@@ -201,6 +200,5 @@ private fun priorityLabel(p: Priority) = when (p) {
 
 private fun statusLabel(s: TaskStatus) = when (s) {
     TaskStatus.TODO -> "Новая"
-    TaskStatus.IN_PROGRESS -> "В процессе"
     TaskStatus.DONE -> "Выполнена"
 }

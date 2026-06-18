@@ -105,7 +105,7 @@ fun EditTaskContent(
                     selected = status == s,
                     onClick = { status = s },
                     label = {
-                        Text(when (s) { TaskStatus.TODO -> "Новая"; TaskStatus.IN_PROGRESS -> "В процессе"; TaskStatus.DONE -> "Готово" })
+                        Text(when (s) { TaskStatus.TODO -> "Новая"; TaskStatus.DONE -> "Готово" })
                     }
                 )
             }
