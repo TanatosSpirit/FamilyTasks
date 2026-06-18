@@ -101,7 +101,7 @@ fun LogsScreen(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(vertical = 4.dp)
                 ) {
-                    items(entries, key = { "${it.time}_${it.tag}_${it.message}" }) { entry ->
+                    items(entries, key = { it.id }) { entry ->
                         LogRow(entry)
                         HorizontalDivider(thickness = 0.5.dp)
                     }

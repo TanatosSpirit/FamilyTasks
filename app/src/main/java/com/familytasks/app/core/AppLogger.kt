@@ -5,7 +5,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-data class LogEntry(val time: Long, val level: LogLevel, val tag: String, val message: String)
+data class LogEntry(val id: Long, val time: Long, val level: LogLevel, val tag: String, val message: String)
 
 enum class LogLevel { D, I, W, E }
 
@@ -14,6 +14,7 @@ enum class LogLevel { D, I, W, E }
 object AppLogger {
     private const val MAX_ENTRIES = 500
     private val buffer = ArrayDeque<LogEntry>(MAX_ENTRIES)
+    private var nextId = 0L
     private val _entries = MutableStateFlow<List<LogEntry>>(emptyList())
     val entries: StateFlow<List<LogEntry>> = _entries.asStateFlow()
 
@@ -28,8 +29,8 @@ object AppLogger {
     }
 
     private fun append(level: LogLevel, tag: String, message: String) {
-        val entry = LogEntry(System.currentTimeMillis(), level, tag, message)
         synchronized(buffer) {
+            val entry = LogEntry(nextId++, System.currentTimeMillis(), level, tag, message)
             if (buffer.size >= MAX_ENTRIES) buffer.removeFirst()
             buffer.addLast(entry)
             _entries.value = buffer.toList()
