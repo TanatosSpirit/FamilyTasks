@@ -27,4 +27,7 @@ interface TaskDao {
 
     @Query("UPDATE tasks SET deleted = 1, updatedAt = :updatedAt WHERE id = :id")
     suspend fun softDelete(id: String, updatedAt: Long)
+
+    @Query("DELETE FROM tasks WHERE id IN (:ids)")
+    suspend fun purgeByIds(ids: List<String>)
 }

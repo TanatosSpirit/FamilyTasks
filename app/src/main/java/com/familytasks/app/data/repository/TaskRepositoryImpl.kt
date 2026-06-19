@@ -33,4 +33,7 @@ class TaskRepositoryImpl @Inject constructor(
 
     override suspend fun getAllTasksSnapshot(): List<Task> =
         dao.getAll().map { it.toDomain() }
+
+    override suspend fun purgeTasks(ids: List<String>) =
+        dao.purgeByIds(ids)
 }

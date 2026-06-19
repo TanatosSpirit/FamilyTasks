@@ -21,4 +21,14 @@ class SyncUseCase @Inject constructor(
             deviceRepository.upsertDevice(device)
         }
     }
+
+    // Safe to purge: peer's response shows it already holds the same id as deleted too.
+    suspend fun purgeConfirmedTombstones(sentTasks: List<Task>, remoteTasks: List<Task>): Int {
+        val remoteDeletedIds = remoteTasks.asSequence().filter { it.deleted }.mapTo(mutableSetOf()) { it.id }
+        val purgeableIds = sentTasks.filter { it.deleted && it.id in remoteDeletedIds }.map { it.id }
+        if (purgeableIds.isNotEmpty()) {
+            taskRepository.purgeTasks(purgeableIds)
+        }
+        return purgeableIds.size
+    }
 }

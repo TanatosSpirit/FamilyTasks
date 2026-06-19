@@ -423,6 +423,14 @@ NanoHTTPD кладёт IP входящего подключения в заго�
 
 `triggerSync()` проверяет `syncState == SYNCING` и возвращается без действий, если синхронизация уже идёт. Оба устройства могут запустить scan одновременно и оба найти друг друга — без этой защиты возникает гонка.
 
+### triggerSync — purge подтверждённых tombstone-задач после успешного sync
+
+После успешного `mergeAll(response...)` (ветка `response.deviceId == prefs.pairedDeviceId`) вызывается `syncUseCase.purgeConfirmedTombstones(localTasks, remoteTasks)` — физически удаляет (не softDelete) из локальной БД те tombstone-задачи (`deleted = true`), которые мы отправили в запросе (`localTasks` — снимок, взятый *до* отправки) **и** которые партнёр в своём ответе (`remoteTasks`) тоже отметил как `deleted = true`.
+
+**Почему это безопасно:** `onSyncRequest` на стороне партнёра выполняет `mergeAll(incoming)` *до* того, как строит и отправляет `response` (см. «onSyncRequest — снимок локальных задач берётся после merge, а не до»). Значит, если ответ пришёл с правильным `deviceId`, партнёр уже сохранил у себя всё, что мы отправили, включая наши tombstone-ы. Проверка по пересечению (а не просто «ответ пришёл — чистим всё, что отправили») страхует от LWW-конфликта: если у партнёра по этому же `id` оказалась более свежая активная версия (отредактировал, не зная о нашем удалении), в `remoteTasks` для этого `id` придёт `deleted = false` — он не попадёт в пересечение и не будет удалён (а наша версия и так будет перезаписана активной при `mergeAll`, как обычный LWW).
+
+**Почему purge не делается в `onSyncRequest` (на стороне responder-а):** там нет гарантии, что наш `response` дойдёт до партнёра — соединение может оборваться уже после отправки. Tombstone, которые мы отправляем в ответе впервые, чистятся не там, а позже — когда мы сами окажемся в роли initiator-а (свой sync по локальному изменению, reconnect-триггер или keepAlive-восстановление) и получим подтверждение тем же механизмом. Поскольку оба устройства регулярно инициируют sync самостоятельно, отдельная логика очистки на стороне responder-а не нужна.
+
 ### Self-loop detection — защита от синка с собой
 
 **Сценарий:** устройство A хранит `peerIp = .3` (бывший IP устройства B). B уходит офлайн, освобождает `.3`. A получает `.3` через DHCP (при reconnect или тихом renewal). Теперь `peerIp == ownIp` — A стучится к себе.
@@ -576,3 +584,4 @@ AppLogger.e(TAG, "ошибка", throwable)
 | `New IP (...) matches peerIp — self-loop detected on IP change, clearing peerIp, starting scan` | `SyncService` | W | DHCP renewal без разрыва — IP сменился на peerIp |
 | `KeepAlive — unexpected deviceId ... at ... (expected ...) — self-loop?` | `SyncService` | W | keepAlive получил не pairedDeviceId — страховочный слой |
 | `Sync response from unexpected device ... at ... (expected ...) — self-loop? Clearing IP, starting scan` | `SyncService` | W | triggerSync поймал гонку: ответ пришёл от себя |
+| `Purged N confirmed tombstone(s)` | `SyncService` | I | После успешного sync (как initiator) — сколько tombstone-задач удалено физически, т.к. партнёр подтвердил, что тоже их пометил как deleted |

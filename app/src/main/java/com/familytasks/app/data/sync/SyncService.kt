@@ -391,10 +391,12 @@ class SyncService : Service() {
                 )
                 val response = httpClient.sync(peerIp, 8080, payload)
                 if (response != null && response.deviceId == prefs.pairedDeviceId) {
-                    syncUseCase.mergeAll(
-                        response.tasks.map { it.toDomain() },
-                        response.devices.map { it.toDomain() }
-                    )
+                    val remoteTasks = response.tasks.map { it.toDomain() }
+                    syncUseCase.mergeAll(remoteTasks, response.devices.map { it.toDomain() })
+                    val purged = syncUseCase.purgeConfirmedTombstones(localTasks, remoteTasks)
+                    if (purged > 0) {
+                        AppLogger.i(TAG, "Purged $purged confirmed tombstone(s)")
+                    }
                     val now = System.currentTimeMillis()
                     prefs.lastSyncAt = now
                     syncManager.setLastSyncAt(now)
