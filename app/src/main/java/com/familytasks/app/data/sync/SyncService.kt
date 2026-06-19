@@ -197,6 +197,7 @@ class SyncService : Service() {
                         }
                         syncManager.setPeerIp(senderIp)
                         scanJob?.cancel()
+                        verifyJob?.cancel()
                     }
                 }
 
@@ -229,6 +230,7 @@ class SyncService : Service() {
                         }
                         syncManager.setPeerIp(senderIp)
                         scanJob?.cancel()
+                        verifyJob?.cancel()
                         scope.launch { triggerSync() }
                     }
                 }
