@@ -227,7 +227,7 @@ SubnetScanner.scan() — guard: если WiFi недоступен (isWifiConnec
 ```xml
 INTERNET, ACCESS_WIFI_STATE, CHANGE_WIFI_STATE
 ACCESS_NETWORK_STATE
-FOREGROUND_SERVICE, FOREGROUND_SERVICE_CONNECTED_DEVICE, FOREGROUND_SERVICE_DATA_SYNC
+FOREGROUND_SERVICE, FOREGROUND_SERVICE_SPECIAL_USE
 POST_NOTIFICATIONS            ← требует явного разрешения на Android 13+
 RECEIVE_BOOT_COMPLETED
 USE_EXACT_ALARM, SCHEDULE_EXACT_ALARM
@@ -237,7 +237,11 @@ CAMERA                        ← для сканирования QR
 
 `CHANGE_WIFI_MULTICAST_STATE` остался в манифесте как наследие UDP-подхода — можно удалить, функциональности не несёт.
 
-`SyncService` объявлен с `android:foregroundServiceType="connectedDevice|dataSync"` (обязательно для Android 14+).
+`SyncService` объявлен с `android:foregroundServiceType="specialUse"` + `<property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" .../>` (обязательное текстовое описание use-case для этого типа, без него `startForeground()` с этим типом падает на API 34+).
+
+**Почему `specialUse`, а не `connectedDevice|dataSync` (так было раньше):** обнаружено по crash-логам (`adb logcat -b crash`) 2026-06-18 на обоих устройствах — Android 15 вводит лимит **6 часов работы в 24-часовом окне** для foreground-сервисов типа `dataSync`/`mediaProcessing` (общий бюджет на тип, не на инстанс; сбрасывается, когда пользователь открывает приложение на передний план). По истечении лимита система зовёт `Service.onTimeout()`, и если сервис не остановится сам за несколько секунд — крашит всё приложение (`RemoteServiceException$ForegroundServiceDidNotStopInTimeException`). Хуже того: до конца 24-часового окна **любая** попытка повторно поднять `dataSync`-сервис (keepAlive-будильник, BootReceiver, открытие MainActivity) тоже крашит приложение (`ForegroundServiceStartNotAllowedException: Time limit already exhausted`). У одного из двух телефонов (S23 Ultra) это повторялось часами на протяжении нескольких дней (14, 17, 18 июня) — `SyncService` именно из-за этого лимита работает не 24/7, как задумано, а с многочасовыми перебоями и видимыми крашами приложения.
+
+`connectedDevice` в список ограниченных типов не входит, но решили последовать примеру `syncthing-android` (тот же класс задачи — постоянная LAN-синхронизация между двумя устройствами, проверено годами в проде): там сервис объявлен с типом `specialUse` именно для этого паттерна. Лимита времени у `specialUse` нет. `ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE` как константа доступен только с API 34 (`UPSIDE_DOWN_CAKE`) — в `SyncService.startForegroundCompat()` проверка версии сдвинута с `Q` на `UPSIDE_DOWN_CAKE`; на API 29-33 вызывается `startForeground()` без указания типа (так же делает `syncthing-android`).
 
 ### Cleartext HTTP (Android 9+)
 
