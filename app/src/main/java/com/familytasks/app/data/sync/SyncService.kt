@@ -21,6 +21,7 @@ import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
+import com.familytasks.app.MainActivity
 import com.familytasks.app.R
 import com.familytasks.app.core.AppLogger
 import com.familytasks.app.core.DeviceIdManager
@@ -449,7 +450,18 @@ class SyncService : Service() {
             .setContentText(getString(R.string.sync_service_notification_text))
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setOngoing(true)
+            .setContentIntent(openAppPendingIntent())
             .build()
+
+    private fun openAppPendingIntent(): PendingIntent {
+        val intent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        return PendingIntent.getActivity(
+            this, NOTIFICATION_ID, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+    }
 
     private fun startForegroundCompat() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
