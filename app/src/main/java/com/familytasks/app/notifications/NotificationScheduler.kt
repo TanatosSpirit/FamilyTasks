@@ -2,12 +2,15 @@ package com.familytasks.app.notifications
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
 import androidx.core.app.NotificationCompat
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.workDataOf
+import com.familytasks.app.MainActivity
 import com.familytasks.app.core.AppLogger
 import com.familytasks.app.core.PreferencesManager
 import com.familytasks.app.domain.model.Task
@@ -49,6 +52,7 @@ class NotificationScheduler @Inject constructor(
         if (oneDayBefore > now) {
             scheduleNotificationWorker(
                 task.id + "_day",
+                task.id,
                 task.title,
                 "Осталось 1 день",
                 oneDayBefore - now
@@ -60,6 +64,7 @@ class NotificationScheduler @Inject constructor(
         if (oneHourBefore > now) {
             scheduleNotificationWorker(
                 task.id + "_hour",
+                task.id,
                 task.title,
                 "Осталось 1 час",
                 oneHourBefore - now
@@ -72,7 +77,7 @@ class NotificationScheduler @Inject constructor(
 
     fun notifyNewTask(task: Task) {
         if (!prefs.notifyNewTask) return
-        showNotification(CH_NEW_TASK, task.id.hashCode(), "Тебе назначена задача", task.title)
+        showNotification(CH_NEW_TASK, task.id.hashCode(), "Тебе назначена задача", task.title, task.id)
     }
 
     fun notifyStatusChanged(task: Task) {
@@ -81,7 +86,7 @@ class NotificationScheduler @Inject constructor(
             "done" -> "выполнена"
             else -> "обновлена"
         }
-        showNotification(CH_STATUS, task.id.hashCode() + 1000, "Задача $statusLabel", task.title)
+        showNotification(CH_STATUS, task.id.hashCode() + 1000, "Задача $statusLabel", task.title, task.id)
     }
 
     fun cancelDueNotifications(taskId: String) {
@@ -94,23 +99,35 @@ class NotificationScheduler @Inject constructor(
         WorkManager.getInstance(context).cancelUniqueWork(tag)
     }
 
-    private fun scheduleNotificationWorker(tag: String, title: String, text: String, delayMs: Long) {
+    private fun scheduleNotificationWorker(tag: String, taskId: String, title: String, text: String, delayMs: Long) {
         AppLogger.d(TAG, "Schedule notification [$tag] in ${delayMs / 60_000}m")
         val request = OneTimeWorkRequestBuilder<DueNotificationWorker>()
             .setInitialDelay(delayMs, TimeUnit.MILLISECONDS)
-            .setInputData(workDataOf("title" to title, "text" to text))
+            .setInputData(workDataOf("taskId" to taskId, "title" to title, "text" to text))
             .build()
         WorkManager.getInstance(context).enqueueUniqueWork(tag, ExistingWorkPolicy.REPLACE, request)
     }
 
-    private fun showNotification(channel: String, id: Int, title: String, text: String) {
+    private fun showNotification(channel: String, id: Int, title: String, text: String, taskId: String) {
         val notification = NotificationCompat.Builder(context, channel)
             .setContentTitle(title)
             .setContentText(text)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setAutoCancel(true)
+            .setContentIntent(taskDetailPendingIntent(id, taskId))
             .build()
         manager.notify(id, notification)
+    }
+
+    private fun taskDetailPendingIntent(requestCode: Int, taskId: String): PendingIntent {
+        val intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra(MainActivity.EXTRA_TASK_ID, taskId)
+        }
+        return PendingIntent.getActivity(
+            context, requestCode, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
     }
 
     companion object {

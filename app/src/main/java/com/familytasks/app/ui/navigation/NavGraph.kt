@@ -1,6 +1,7 @@
 package com.familytasks.app.ui.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -19,9 +20,20 @@ import com.familytasks.app.ui.tasks.TaskDetailScreen
 import com.familytasks.app.ui.tasks.TaskListScreen
 
 @Composable
-fun NavGraph(prefs: PreferencesManager) {
+fun NavGraph(
+    prefs: PreferencesManager,
+    pendingTaskId: String? = null,
+    onPendingTaskIdConsumed: () -> Unit = {}
+) {
     val navController = rememberNavController()
     val start = if (prefs.isOnboardingComplete) Screen.TaskList.route else Screen.Onboarding.route
+
+    LaunchedEffect(pendingTaskId) {
+        if (pendingTaskId != null) {
+            navController.navigate(Screen.TaskDetail().createRoute(pendingTaskId))
+            onPendingTaskIdConsumed()
+        }
+    }
 
     NavHost(navController = navController, startDestination = start) {
         composable(Screen.Onboarding.route) {
