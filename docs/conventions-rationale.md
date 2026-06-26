@@ -48,7 +48,7 @@
 
 `peerIp` живёт как `StateFlow` в `SyncManager` (`@Singleton`), сидируется значением `prefs.lastKnownPeerIp` при создании синглтона — переживает рестарт процесса. Коллизия с устаревшим IP возможна и сразу после холодного старта.
 
-**Три слоя защиты** (реализованы в `SyncService.kt`):
+**Четыре слоя защиты** (реализованы в `SyncService.kt`):
 
 | Слой | Место | Когда ловит |
 |---|---|---|
@@ -110,3 +110,20 @@ WiFi power-save может поглощать первый TCP SYN, пока р�
 - `TaskDetailViewModel.cycleStatus()` и `updateTask()` используют общий `applyDueNotificationState()`: ставит напоминания только если `assignedTo == myDeviceId && status != DONE && !deleted`, иначе отменяет.
 - `MergeTasksUseCase` (ветка `updated`) сравнивает `wasEligible`/`isEligible` до и после merge.
 - `NotificationScheduler.scheduleDueNotifications()` — если отметка уже в прошлом, явно вызывает `cancelUniqueWork` (раньше ничего не делал, оставляя висеть старый воркер).
+
+---
+
+## observeTaskChanges — почему порядок `distinctUntilChanged()` → `drop(1)` нельзя менять
+
+```kotlin
+taskRepository.observeAllTasks()
+    .distinctUntilChanged()  // запоминает initial-список как baseline
+    .drop(1)                 // дропает только первую (initial) эмиссию
+    .debounce(3_000L)
+    .collect { triggerSync() }
+```
+
+Если `drop(1)` поставить **первым**, `distinctUntilChanged()` никогда не видит initial-эмиссию,
+baseline не устанавливается, и первая же эмиссия после дропа (даже с теми же данными) проходит
+насквозь до `debounce` — лишний `triggerSync()` через 3 секунды после каждого sync. Именно
+`distinctUntilChanged()` должен увидеть initial-список, чтобы потом отсечь повтор тех же данных.

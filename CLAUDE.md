@@ -80,59 +80,16 @@ ui/
 
 ### Синхронизация — ключевой поток
 
-```
-WiFi подключилось
-  └─ ipTrackingCallback.onAvailable → если peerIp == null → SubnetScanner.scan()
-                                      если peerIp != null → GET /identify к сохранённому peerIp (проверка актуальности)
-                                          (delay 1.5 сек перед первой попыткой, затем до 3 попыток с паузой 3 сек —
-                                           см. «WiFi reconnected — verify retry»)
-                                          ├─ любая попытка совпала с pairedDeviceId → "peer confirmed" → triggerSync()
-                                          └─ все 3 попытки провалились → peerIp = null → SubnetScanner.scan()
-       (wifiReceiver при isConnected больше не используется: NETWORK_STATE_CHANGED_ACTION срабатывает
-        раньше, чем ConnectivityManager регистрирует сеть — isWifiConnected() возвращал false)
+Четыре события запускают работу sync-слоя:
 
-WiFi отключилось
-  └─ wifiReceiver → scanJob и verifyJob отменяются; peerIp НЕ очищается
-       (при переподключении к той же сети triggerSync сразу попробует сохранённый IP)
-       (если IP устарел → PeerUnreachableException очистит его и запустит scan)
+- **WiFi подключилось** (`ipTrackingCallback.onAvailable`): если `peerIp == null` → `SubnetScanner.scan()`; если `peerIp != null` → verify сохранённого IP через GET /identify (до 3 попыток, см. «WiFi reconnected — verify retry»), при провале → `peerIp = null` → scan.
+- **WiFi отключилось** (`wifiReceiver`): `scanJob`/`verifyJob` отменяются, `peerIp` **не** очищается (переподключение к той же сети сразу пробует сохранённый IP).
+- **Задача изменилась** (`observeTaskChanges`, debounce 3 сек) → `triggerSync()`; если `peerIp == null` и scan не идёт → scan.
+- **keepAlive** (`AlarmManager.setExactAndAllowWhileIdle`, раз в час, срабатывает в Doze) → `performKeepAlive()`: verify `peerIp` либо scan, если IP потерян.
 
-SubnetScanner.scan() — guard: если WiFi недоступен (isWifiConnected() == false), выход без запуска
-       │
-       ├─ SubnetScanner — параллельные GET /identify к 192.168.x.1–254
-       │   (concurrency=10, timeout 1.5 сек на хост)
-       │   (найден deviceId == pairedDeviceId)
-       │        └─ SyncManager.setPeerIp(ip) → triggerSync()
-       │                 │
-       │                 ├─ Sync OK → lastSyncAt обновлён
-       │                 └─ PeerUnreachableException (HTTP timeout)
-       │                      └─ peerIp = null → SubnetScanner.scan() повторно
-       │
-       ├─ HttpServer :8080
-       │   GET /identify          ←── входящий scan (без параметров) → { deviceId }
-       │   GET /identify?deviceId ←── входящий keepAlive от партнёра
-       │       └─ onPeerIdentified: deviceId == pairedDeviceId && peerIp == null
-       │              └─ SyncManager.setPeerIp(senderIp) → triggerSync()
-       │   POST /sync     ←── входящий запрос от партнёра
-       │       └─ senderIp из заголовка "remote-addr"
-       │          если senderIp != null && deviceId == pairedDeviceId && peerIp == null:
-       │              └─ SyncManager.setPeerIp(senderIp)  ← пир нашёл нас раньше
-       │          └─ MergeTasksUseCase → ответ с локальными задачами
-       │
-       └─ keepAlive (AlarmManager.setExactAndAllowWhileIdle, раз в час на границе UTC-часа)
-           AlarmManager → KeepAliveReceiver.onReceive() → SyncService.ACTION_KEEPALIVE
-               → performKeepAlive(): сначала scheduleKeepAlive() (следующий час), потом работа:
-           если peerIp != null:
-               GET /identify?deviceId=... → peerIp
-               ├─ OK  → IP актуален, ничего не делаем
-               └─ fail → peerIp = null → SubnetScanner.scan()
-           если peerIp == null && scan не запущен:
-               └─ SubnetScanner.scan()
-           (срабатывает даже в Doze; после рестарта сервиса сигнал восстанавливается из onCreate → scheduleKeepAlive)
+`SubnetScanner` шлёт параллельные GET /identify по подсети (concurrency=10, timeout 1.5 сек); найдя `deviceId == pairedDeviceId`, вызывает `setPeerIp(ip)` → `triggerSync()`. Входящие запросы обрабатывает `HttpServer :8080` (GET /identify, POST /sync) — он же пассивно восстанавливает `peerIp` из заголовка `remote-addr`.
 
-Задача изменилась (debounce 3 сек):
-  observeTaskChanges() → triggerSync()
-      если peerIp == null && scan не запущен → SubnetScanner.scan()
-```
+**Полные диаграммы** (layer / flowchart / sequence / peerIp-recovery) — в `docs/architecture.md`. Ключевые правила обработчиков — в разделе «Конвенции» ниже.
 
 ---
 
@@ -235,11 +192,7 @@ REQUEST_IGNORE_BATTERY_OPTIMIZATIONS  ← запрос исключения из
 CAMERA                        ← для сканирования QR
 ```
 
-`CHANGE_WIFI_MULTICAST_STATE` остался в манифесте как наследие UDP-подхода — можно удалить, функциональности не несёт.
-
-`SyncService` объявлен с `android:foregroundServiceType="specialUse"` + `<property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" .../>` (обязательное текстовое описание use-case для этого типа, без него `startForeground()` с этим типом падает на API 34+).
-
-**Почему `specialUse`:** `dataSync` на Android 15 ограничен 6 ч/сутки → крашит приложение по истечении и при попытке рестарта. `specialUse` без лимита (аналогично `syncthing-android`). `ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE` доступен с API 34 — на API 29–33 `startForeground()` вызывается без типа. Подробнее: `docs/foreground-service-type.md`.
+`SyncService` объявлен с `android:foregroundServiceType="specialUse"` + `<property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" .../>` (обязательное текстовое описание use-case, без него `startForeground()` падает на API 34+). Выбран `specialUse`, а не `dataSync` (тот на Android 15 ограничен 6 ч/сутки → краш). Тип доступен с API 34; на API 29–33 `startForeground()` вызывается без типа. Подробнее: `docs/foreground-service-type.md`.
 
 ### Cleartext HTTP (Android 9+)
 
@@ -247,24 +200,9 @@ CAMERA                        ← для сканирования QR
 
 ### Достижимость в фоне (Doze + Samsung One UI)
 
-Foreground Service **не выводит приложение из Doze** и не держит CPU/WiFi. Когда телефон заблокирован и неподвижен, наступает Doze: CPU уходит в suspend (accept-loop NanoHTTPD не выполняется), сеть для приложения замораживается, WiFi-радио уходит в power-save. Итог — заблокированный на часы телефон перестаёт отвечать партнёру на `/identify` и `/sync`.
+Foreground Service **не выводит приложение из Doze** и не держит CPU/WiFi — заблокированный телефон перестаёт отвечать на `/identify` и `/sync`. Лечится через `keepAlive` на `AlarmManager.setExactAndAllowWhileIdle()` (срабатывает в Doze) + `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`. Реализован уровень 1 (Doze whitelist) — постоянные `WifiLock`/`WakeLock` сознательно не используются ради батареи.
 
-`keepAlive` реализован через `AlarmManager.setExactAndAllowWhileIdle()` — в отличие от `delay()` в корутине, этот будильник срабатывает даже в Doze. Каждое срабатывание выводит CPU и WiFi из сна на ~1–2 сек (один GET /identify), после чего устройство возвращается в Doze. Стоимость 8 пробуждений за ночь — порядка 0.3–0.5 мАч (на 4 порядка меньше MulticastLock).
-
-**Реализован уровень 1 (Doze whitelist, минимум по батарее).** Это сознательный выбор: `WifiLock`/`WakeLock` **не используются**, чтобы не возвращать постоянный расход батареи (ср. удалённый MulticastLock, ~600 мАч/сутки). Жёсткой гарантии «отклик в любую миллисекунду» нет — WiFi power-save может добавлять задержку на пробуждение или редкий обрыв входящего соединения. Если потребуется надёжнее — следующий шаг это `WifiLock(WIFI_MODE_FULL_HIGH_PERF)` (уровень 2) и постоянный partial `WakeLock` (уровень 3), оба ценой батареи.
-
-Что есть в коде:
-- `AlarmManager.setExactAndAllowWhileIdle()` для keepAlive — срабатывает в Doze, цепочка: `KeepAliveReceiver` → `SyncService.ACTION_KEEPALIVE` → `performKeepAlive()`.
-- `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` в манифесте.
-- Секция «Фоновая работа» в `SettingsScreen` — показывает статус `PowerManager.isIgnoringBatteryOptimizations()` и кнопку, открывающую системный диалог (`Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`). Статус перечитывается на `ON_RESUME` (диалог не возвращает результат).
-
-**Ручной чек-лист на ОБОИХ телефонах (без него код бессилен — One UI замораживает агрессивнее, чем перекрывает Doze-whitelist):**
-1. Приложение → Настройки → Фоновая работа → «Отключить оптимизацию батареи».
-2. Настройки телефона → Приложения → FamilyTasks → Батарея → **«Без ограничений»**.
-3. Настройки → Батарея → Ограничения фоновой активности → добавить в **«Никогда не отправлять в сон»**; убрать из «Спящих»/«Глубоко спящих».
-4. Настройки → Батарея → выключить **«Переводить неиспользуемые приложения в сон»** (или исключить приложение).
-
-Пункты 2–4 из кода недоступны — только пользователь руками. Метки в One UI 8.5 могут чуть отличаться.
+**Важно:** code-only недостаточно — One UI требует ручной настройки батареи на ОБОИХ телефонах. Полный разбор, объяснение уровней и пользовательский чек-лист: `docs/background-reachability.md`.
 
 ---
 
@@ -365,11 +303,11 @@ NanoHTTPD кладёт IP входящего подключения в заго�
 
 ### startSubnetScan — PARTIAL_WAKE_LOCK на время scan
 
-`startSubnetScan()` держит `PowerManager.PARTIAL_WAKE_LOCK` ("FamilyTasks:scan") на всё время своей корутины: все попытки `subnetScanner.scan()` и паузы между ними. `acquire(120_000L)` — защитный потолок. Освобождается в `finally`, включая путь через `CancellationException`. Без WakeLock устройство уходит в Doze посреди scan и OkHttp-вызовы зависают (зафиксирован случай 308 сек вместо ~21 сек).
+`startSubnetScan()` держит `PowerManager.PARTIAL_WAKE_LOCK` ("FamilyTasks:scan") на всё время своей корутины: все попытки `subnetScanner.scan()` и паузы между ними. `acquire(120_000L)` — защитный потолок. Освобождается в `finally`, включая путь через `CancellationException`. Без WakeLock устройство уходит в Doze посреди scan и OkHttp-вызовы зависают. Обоснование потолка и зафиксированные замеры: `docs/conventions-rationale.md`.
 
 ### performKeepAlive — PARTIAL_WAKE_LOCK на retry-цикл identify
 
-`performKeepAlive()` держит `PowerManager.PARTIAL_WAKE_LOCK` ("FamilyTasks:keepAlive") на весь retry-цикл `/identify` (до 3 попыток с паузами по 3 с). `acquire(30_000L)` — защитный потолок. Освобождается в `finally`. Без WakeLock пауза между попытками растягивалась с 3 сек до 30–59 сек (устройство уходило в Doze посреди цикла).
+`performKeepAlive()` держит `PowerManager.PARTIAL_WAKE_LOCK` ("FamilyTasks:keepAlive") на весь retry-цикл `/identify` (до 3 попыток с паузами по 3 с). `acquire(30_000L)` — защитный потолок. Освобождается в `finally`. Без WakeLock устройство уходит в Doze посреди цикла и паузы растягиваются. Замеры: `docs/conventions-rationale.md`.
 
 ### onSyncRequest — снимок локальных задач берётся после merge, а не до
 
@@ -385,18 +323,9 @@ NanoHTTPD кладёт IP входящего подключения в заго�
 
 ### Self-loop detection — защита от синка с собой
 
-**Сценарий:** A хранит `peerIp = .3` (бывший IP B). B уходит офлайн, A получает `.3` через DHCP → `peerIp == ownIp`. `peerIp` сидируется из `prefs.lastKnownPeerIp` при старте, то есть коллизия возможна и после холодного рестарта.
+**Сценарий:** A хранит `peerIp = .3` (бывший IP B); B уходит офлайн, A получает `.3` через DHCP → `peerIp == ownIp` (коллизия возможна и после холодного рестарта — `peerIp` сидируется из `prefs.lastKnownPeerIp`).
 
-**Четыре слоя защиты** (реализованы в `SyncService.kt`):
-
-| Слой | Место | Когда ловит |
-|---|---|---|
-| IP-check | `ipTrackingCallback.onAvailable` | WiFi connected: до запуска scan/verify |
-| IP-check | `ipTrackingCallback.onLinkPropertiesChanged` | DHCP renewal без разрыва |
-| deviceId-check | `performKeepAlive` | `identify()` вернул не `pairedDeviceId` |
-| deviceId-check | `triggerSync` (response) | Race condition: `peerIp` захвачен в локальную переменную до очистки IP-check'ом |
-
-При self-loop данные не портятся: merge своих задач со своими — tie-break, ничего не меняется. Ответ с `ownDeviceId != pairedDeviceId` → `peerIp = null` → scan. Подробнее: `docs/conventions-rationale.md`.
+**Четыре слоя защиты** в `SyncService.kt`: два IP-check (`onAvailable`, `onLinkPropertiesChanged`) до запуска scan/verify и два deviceId-check (`performKeepAlive`, `triggerSync` по response) на случай гонки. Данные при self-loop не портятся (merge своих со своими = tie-break). Полная таблица слоёв и разбор гонки: `docs/conventions-rationale.md`.
 
 ### Механизмы восстановления peerIp
 
@@ -450,17 +379,7 @@ Merge done: +1 new, ~1 updated, =23 unchanged — writing 2/25 tasks to DB
 
 ### observeTaskChanges — порядок операторов
 
-В `SyncService.observeTaskChanges()` операторы стоят в строгом порядке:
-
-```kotlin
-taskRepository.observeAllTasks()
-    .distinctUntilChanged()  // запоминает initial-список как baseline
-    .drop(1)                 // дропает только первую (initial) эмиссию
-    .debounce(3_000L)
-    .collect { triggerSync() }
-```
-
-**Нельзя менять местами `distinctUntilChanged()` и `drop(1)`.** Если `drop(1)` стоит первым, `distinctUntilChanged()` никогда не видит initial-эмиссию, baseline не устанавливается, и первая же эмиссия после дропа (даже с теми же данными) проходит насквозь до `debounce` — что даёт лишний `triggerSync()` через 3 секунды после каждого sync.
+В `SyncService.observeTaskChanges()` порядок строгий: `observeAllTasks().distinctUntilChanged().drop(1).debounce(3_000L).collect { triggerSync() }`. **Нельзя менять местами `distinctUntilChanged()` и `drop(1)`** — иначе baseline не устанавливается и после каждого sync возникает лишний `triggerSync()`. Разбор: `docs/conventions-rationale.md`.
 
 ### AppLogger — встроенный лог-вьюер
 
