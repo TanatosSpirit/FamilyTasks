@@ -239,9 +239,7 @@ CAMERA                        ← для сканирования QR
 
 `SyncService` объявлен с `android:foregroundServiceType="specialUse"` + `<property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" .../>` (обязательное текстовое описание use-case для этого типа, без него `startForeground()` с этим типом падает на API 34+).
 
-**Почему `specialUse`, а не `connectedDevice|dataSync` (так было раньше):** обнаружено по crash-логам (`adb logcat -b crash`) 2026-06-18 на обоих устройствах — Android 15 вводит лимит **6 часов работы в 24-часовом окне** для foreground-сервисов типа `dataSync`/`mediaProcessing` (общий бюджет на тип, не на инстанс; сбрасывается, когда пользователь открывает приложение на передний план). По истечении лимита система зовёт `Service.onTimeout()`, и если сервис не остановится сам за несколько секунд — крашит всё приложение (`RemoteServiceException$ForegroundServiceDidNotStopInTimeException`). Хуже того: до конца 24-часового окна **любая** попытка повторно поднять `dataSync`-сервис (keepAlive-будильник, BootReceiver, открытие MainActivity) тоже крашит приложение (`ForegroundServiceStartNotAllowedException: Time limit already exhausted`). У одного из двух телефонов (S23 Ultra) это повторялось часами на протяжении нескольких дней (14, 17, 18 июня) — `SyncService` именно из-за этого лимита работает не 24/7, как задумано, а с многочасовыми перебоями и видимыми крашами приложения.
-
-`connectedDevice` в список ограниченных типов не входит, но решили последовать примеру `syncthing-android` (тот же класс задачи — постоянная LAN-синхронизация между двумя устройствами, проверено годами в проде): там сервис объявлен с типом `specialUse` именно для этого паттерна. Лимита времени у `specialUse` нет. `ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE` как константа доступен только с API 34 (`UPSIDE_DOWN_CAKE`) — в `SyncService.startForegroundCompat()` проверка версии сдвинута с `Q` на `UPSIDE_DOWN_CAKE`; на API 29-33 вызывается `startForeground()` без указания типа (так же делает `syncthing-android`).
+**Почему `specialUse`:** `dataSync` на Android 15 ограничен 6 ч/сутки → крашит приложение по истечении и при попытке рестарта. `specialUse` без лимита (аналогично `syncthing-android`). `ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE` доступен с API 34 — на API 29–33 `startForeground()` вызывается без типа. Подробнее: `docs/foreground-service-type.md`.
 
 ### Cleartext HTTP (Android 9+)
 
@@ -289,39 +287,7 @@ Foreground Service **не выводит приложение из Doze** и н�
 
 ## Энергопотребление
 
-Механика discovery напрямую влияет на расход батареи, т.к. приложение работает как Foreground Service 24/7.
-
-### Профили активности
-
-**Фаза discovery (scan запущен)**
-- `SubnetScanner` шлёт HTTP GET к 253 хостам, 10 параллельно, таймаут 1.5 сек
-- На домашней сети (~10 устройств) большинство хостов отвечают `Connection refused` за <50 мс — scan занимает **2–5 сек** в типичном случае
-- Запускается один раз при старте/переподключении WiFi, затем только при сбоях
-
-**Фаза idle (партнёр найден)**
-- Активность практически нулевая: только keepAlive раз в час (один GET /identify)
-- Открытых UDP-сокетов нет — WiFi-чип может уходить в deep sleep между задачами
-- NanoHTTPD держит accept loop, но это общий сокет без влияния на power-save
-
-**Фаза sync (задача изменилась)**
-- Один POST /sync с debounce 3 сек — идентично любому фоновому HTTP-запросу
-
-### Сравнение с предыдущим UDP-подходом
-
-| | UDP без лока | UDP с MulticastLock | HTTP scan (текущий) |
-|---|---|---|---|
-| Persistent сокет | UDP :9090 открыт 24/7 | UDP :9090 открыт 24/7 | нет |
-| MulticastLock | нет | держится 24/7 | нет |
-| WiFi power-save | частично доступен | **заблокирован** | полностью доступен |
-| Фоновая активность | burst каждые 15 мин | burst каждые 15 мин | keepAlive 1/час |
-| Расход заряда/сутки (MulticastLock) | — | **+~600 мАч** (≈15% на 4000 мАч) | — |
-| Работа при AP Isolation | не работает | не работает | **работает** |
-
-MulticastLock удерживал WiFi-чип вне power-save режима постоянно (~25 мА разницы с power-save × 24 ч ≈ 600 мАч). HTTP-подход полностью устранил эту нагрузку.
-
-### Когда scan медленнее ожидаемого
-
-Если scan занимает >10 сек — роутер не отвечает ICMP unreachable на несуществующие хосты, и все 253 запроса ждут полного таймаута 1.5 сек. При 10 параллельных это ~38 сек. Это не ошибка, просто особенность конкретного роутера.
+Три фазы: discovery (scan ~2–5 сек при старте/сбое), idle (keepAlive раз в час), sync (один POST /sync с debounce 3 сек). Предыдущий UDP+MulticastLock потреблял ~600 мАч/сутки за счёт постоянного удержания WiFi-чипа вне power-save; HTTP-подход полностью устранил эту нагрузку. Если scan >10 сек — роутер не отвечает ICMP unreachable и 253 запроса ждут полного таймаута 1.5 сек (~38 сек при 10 параллельных). Подробнее: `docs/energy-profiles.md`.
 
 ---
 
@@ -395,29 +361,19 @@ NanoHTTPD кладёт IP входящего подключения в заго�
 
 ### startSubnetScan — до 3 попыток scan
 
-`startSubnetScan()` делает до **3 попыток** `subnetScanner.scan()` с паузой 5 с между ними (раньше было 2). Как только одна из попыток нашла IP — остальные не запускаются.
-
-**Зачем третья попытка:** обнаружено по логам — сразу после reconnect (особенно после роуминга между точками mesh-сети) локальная сеть может несколько десятков секунд не быть полностью готова: ARP/маршрутизация ещё не устоялись, и scan по всей подсети не получает ни одного ответа, хотя партнёр физически на месте и не покидал сеть. Двух попыток (~45 сек суммарно) иногда не хватало, чтобы переждать это окно — третья попытка покрывает более долгую нестабильность без ожидания следующего триггера (до часа на keepAlive).
+`startSubnetScan()` делает до **3 попыток** `subnetScanner.scan()` с паузой 5 с между ними. Как только одна из попыток нашла IP — остальные не запускаются.
 
 ### startSubnetScan — PARTIAL_WAKE_LOCK на время scan
 
-`startSubnetScan()` держит `PowerManager.PARTIAL_WAKE_LOCK` ("FamilyTasks:scan") на всё время своей корутины: все попытки `subnetScanner.scan()` и паузы между ними. `acquire(120_000L)` — защитный потолок на случай, если что-то в коде зависнет и `finally` не отработает вовремя; обычный scan укладывается в доли от этого времени. Потолок увеличен с 60 до 120 сек при переходе на 3 попытки — 3 полных безответных скана (~21–27 сек каждый по логам) плюс 2 паузы по 5 сек уже подбираются к 60 сек впритык, и WakeLock не должен истекать раньше, чем закончится легитимный (хоть и медленный) scan. Освобождается в `finally`, включая путь через `CancellationException`.
-
-**Зачем:** обнаружено по логам — `AlarmManager.setExactAndAllowWhileIdle()` гарантирует доставку keepAlive-будильника, но не защищает корутину `scope.launch`, запущенную дальше. Без WakeLock устройство может уйти в Doze посреди уже выполняющегося scan: CPU и сеть замораживаются, OkHttp-вызовы зависают, и scan, который обычно укладывается в ~5–40 сек, может растянуться на несколько минут (зафиксирован случай 308 сек вместо ожидаемых ~21 сек). WakeLock не снимает сетевые ограничения Doze сам по себе, но удерживает CPU активным — таймауты `scanClient` (1.5 сек) срабатывают по расписанию вместо непредсказуемого зависания.
-
-**Чего это не покрывает:** только сторону, которая сканирует. Если партнёр не отвечает, потому что сам ушёл в глубокий Doze (WiFi-радио выключено), WakeLock сканирующего устройства это не лечит — нужна отдельная защита на принимающей стороне (`HttpServer`), которой пока нет. Также не покрывает `triggerSync()` — он запускает свою отдельную корутину и теоретически подвержен той же проблеме, но пока не подтверждён логами.
+`startSubnetScan()` держит `PowerManager.PARTIAL_WAKE_LOCK` ("FamilyTasks:scan") на всё время своей корутины: все попытки `subnetScanner.scan()` и паузы между ними. `acquire(120_000L)` — защитный потолок. Освобождается в `finally`, включая путь через `CancellationException`. Без WakeLock устройство уходит в Doze посреди scan и OkHttp-вызовы зависают (зафиксирован случай 308 сек вместо ~21 сек).
 
 ### performKeepAlive — PARTIAL_WAKE_LOCK на retry-цикл identify
 
-`performKeepAlive()` держит `PowerManager.PARTIAL_WAKE_LOCK` ("FamilyTasks:keepAlive") на весь retry-цикл `/identify` (до 3 попыток с паузами по 3 с). `acquire(30_000L)` — защитный потолок: обычный цикл укладывается в ~10 сек (3 попытки × ≤1.5 сек таймаут + 2 паузы × 3 сек), 30 сек оставляет запас. Освобождается в `finally`.
-
-**Зачем:** ранее этот retry-цикл был единственным местом, не защищённым WakeLock-ом (см. предыдущий раздел, было «не подтверждено логами») — теперь подтверждено: пауза между попытками `identify`, которая должна занимать ~3 сек, в логах растягивалась до 30–59 сек (например, 03:00:00 → 03:00:35 и 14:00:26 → 14:00:56), то есть устройство уходило в Doze посреди уже идущего retry-цикла. Тот же механизм, что и для `startSubnetScan`, устраняет эту задержку.
+`performKeepAlive()` держит `PowerManager.PARTIAL_WAKE_LOCK` ("FamilyTasks:keepAlive") на весь retry-цикл `/identify` (до 3 попыток с паузами по 3 с). `acquire(30_000L)` — защитный потолок. Освобождается в `finally`. Без WakeLock пауза между попытками растягивалась с 3 сек до 30–59 сек (устройство уходило в Doze посреди цикла).
 
 ### onSyncRequest — снимок локальных задач берётся после merge, а не до
 
-В обработчике `POST /sync` (`SyncService.kt`, `onSyncRequest`) `syncUseCase.getLocalSnapshot()` вызывается **после** `syncUseCase.mergeAll(...)`, а не до. Порядок имеет значение: `mergeAll` пишет входящие задачи партнёра в локальную БД, и ответ должен отражать состояние **после** этой записи.
-
-**Зачем:** при обратном порядке (снимок до merge) ответ всегда не содержал только что влитые от партнёра задачи — обнаружено по логам как систематический сдвиг на 1 задачу сразу после создания новой задачи (`Sync OK: sent 48, received 47`, затем партнёр через ~3–5 сек сам присылал нам `/sync` уже с 48, как только у него отрабатывал debounce `observeTaskChanges`). Потери данных не было (запрашивающая сторона уже имела свою же задачу локально), но это лишний раунд трафика и сбивающие с толку счётчики в логе при каждом изменении задачи.
+В обработчике `POST /sync` (`SyncService.kt`, `onSyncRequest`) `syncUseCase.getLocalSnapshot()` вызывается **после** `syncUseCase.mergeAll(...)`. Порядок важен: `mergeAll` пишет входящие задачи партнёра в локальную БД, и ответ должен отражать состояние **после** этой записи.
 
 ### triggerSync — защита от параллельных вызовов
 
@@ -425,30 +381,22 @@ NanoHTTPD кладёт IP входящего подключения в заго�
 
 ### triggerSync — purge подтверждённых tombstone-задач после успешного sync
 
-После успешного `mergeAll(response...)` (ветка `response.deviceId == prefs.pairedDeviceId`) вызывается `syncUseCase.purgeConfirmedTombstones(localTasks, remoteTasks)` — физически удаляет (не softDelete) из локальной БД те tombstone-задачи (`deleted = true`), которые мы отправили в запросе (`localTasks` — снимок, взятый *до* отправки) **и** которые партнёр в своём ответе (`remoteTasks`) тоже отметил как `deleted = true`.
-
-**Почему это безопасно:** `onSyncRequest` на стороне партнёра выполняет `mergeAll(incoming)` *до* того, как строит и отправляет `response` (см. «onSyncRequest — снимок локальных задач берётся после merge, а не до»). Значит, если ответ пришёл с правильным `deviceId`, партнёр уже сохранил у себя всё, что мы отправили, включая наши tombstone-ы. Проверка по пересечению (а не просто «ответ пришёл — чистим всё, что отправили») страхует от LWW-конфликта: если у партнёра по этому же `id` оказалась более свежая активная версия (отредактировал, не зная о нашем удалении), в `remoteTasks` для этого `id` придёт `deleted = false` — он не попадёт в пересечение и не будет удалён (а наша версия и так будет перезаписана активной при `mergeAll`, как обычный LWW).
-
-**Почему purge не делается в `onSyncRequest` (на стороне responder-а):** там нет гарантии, что наш `response` дойдёт до партнёра — соединение может оборваться уже после отправки. Tombstone, которые мы отправляем в ответе впервые, чистятся не там, а позже — когда мы сами окажемся в роли initiator-а (свой sync по локальному изменению, reconnect-триггер или keepAlive-восстановление) и получим подтверждение тем же механизмом. Поскольку оба устройства регулярно инициируют sync самостоятельно, отдельная логика очистки на стороне responder-а не нужна.
+После успешного `mergeAll(response...)` (ветка `response.deviceId == prefs.pairedDeviceId`) вызывается `syncUseCase.purgeConfirmedTombstones(localTasks, remoteTasks)` — физически удаляет из локальной БД tombstone-задачи (`deleted = true`), которые мы отправили **и** которые партнёр в ответе тоже отметил как `deleted = true`. Проверка по пересечению страхует от LWW-конфликта: если у партнёра более свежая активная версия, в `remoteTasks` придёт `deleted = false` — задача не удалится. Подробнее: `docs/conventions-rationale.md`.
 
 ### Self-loop detection — защита от синка с собой
 
-**Сценарий:** устройство A хранит `peerIp = .3` (бывший IP устройства B). B уходит офлайн, освобождает `.3`. A получает `.3` через DHCP (при reconnect или тихом renewal). Теперь `peerIp == ownIp` — A стучится к себе.
+**Сценарий:** A хранит `peerIp = .3` (бывший IP B). B уходит офлайн, A получает `.3` через DHCP → `peerIp == ownIp`. `peerIp` сидируется из `prefs.lastKnownPeerIp` при старте, то есть коллизия возможна и после холодного рестарта.
 
-`peerIp` живёт как `StateFlow` в `SyncManager` (`@Singleton`), но при создании синглтона сидируется значением `prefs.lastKnownPeerIp` (`SyncManager.kt:13`) — то есть переживает рестарт процесса, а не только текущую сессию сервиса. Поэтому коллизия с устаревшим IP возможна и сразу после холодного старта, если последний сохранённый `peerIp` устарел. Все три слоя защиты ниже работают независимо от того, откуда взялось значение (восстановлено из prefs или получено в рантайме), так что на корректность это не влияет — только на формулировку "когда" коллизия возможна.
-
-**Три слоя защиты** (реализованы в `SyncService.kt`):
+**Четыре слоя защиты** (реализованы в `SyncService.kt`):
 
 | Слой | Место | Когда ловит |
 |---|---|---|
-| IP-check | `ipTrackingCallback.onAvailable` | WiFi connected: IP проверяется до запуска scan/verify — self-loop обнаруживается раньше любого исходящего запроса |
-| IP-check | `ipTrackingCallback.onLinkPropertiesChanged` | DHCP renewal без разрыва — onAvailable не срабатывает |
-| deviceId-check | `performKeepAlive` | Страховка: `identify()` вернул не `pairedDeviceId` |
-| deviceId-check | `triggerSync` (response) | Ловит race condition: `peerIp` был захвачен в локальную переменную до того, как IP-check успел вызвать `setPeerIp(null)` |
+| IP-check | `ipTrackingCallback.onAvailable` | WiFi connected: до запуска scan/verify |
+| IP-check | `ipTrackingCallback.onLinkPropertiesChanged` | DHCP renewal без разрыва |
+| deviceId-check | `performKeepAlive` | `identify()` вернул не `pairedDeviceId` |
+| deviceId-check | `triggerSync` (response) | Race condition: `peerIp` захвачен в локальную переменную до очистки IP-check'ом |
 
-**Почему проверка в `triggerSync` нужна отдельно:** `peerIp` читается в начале `triggerSync()` в локальную переменную, затем запускается `scope.launch { }`. Если `onAvailable` очистил `peerIp` в StateFlow между этими двумя точками, локальная переменная внутри корутины уже устарела — HTTP-запрос всё равно уйдёт на старый адрес. Проверка `response.deviceId == pairedDeviceId` ловит именно этот случай.
-
-**Поведение при self-loop:** A посылает POST /sync к себе. Сервер выполняет merge своих задач со своими же (tie-break по `updatedAt` — все unchanged, запись в БД не происходит). Ответ возвращает `deviceId = ownDeviceId`. Клиентская проверка видит `ownDeviceId != pairedDeviceId` → `peerIp = null` → scan. Данные не портятся.
+При self-loop данные не портятся: merge своих задач со своими — tie-break, ничего не меняется. Ответ с `ownDeviceId != pairedDeviceId` → `peerIp = null` → scan. Подробнее: `docs/conventions-rationale.md`.
 
 ### Механизмы восстановления peerIp
 
@@ -464,62 +412,41 @@ Guard `scanJob?.isActive != true` в первых двух путях не да�
 
 ### Перезапись устаревшего peerIp без scan
 
-`onSyncRequest` и `onPeerIdentified` обновляют `peerIp` не только когда он `null`, но и когда `senderIp` отличается от текущего `peerIp`. Условие было `peerIp == null`, стало `peerIp != senderIp`.
+`onSyncRequest` и `onPeerIdentified` обновляют `peerIp` не только когда он `null`, но и когда `senderIp != peerIp` — чтобы сразу отменить текущий scan при DHCP renewal у партнёра. IP перезаписывается только от сопряжённого устройства (проверка `deviceId == pairedDeviceId`). `performKeepAlive` `peerIp` не сохраняет — только проверяет.
 
-**Зачем:** если IP партнёра изменился (DHCP renewal), а он уже дошёл до нас через входящий `/sync` или keepAlive — мы сразу обновляем `peerIp` и отменяем текущий scan (`scanJob?.cancel()`). Без этого мы бы продолжили scan до конца (или до таймаута keepAlive), хотя партнёр уже известен.
-
-**Безопасность обновления:** `incoming.deviceId == prefs.pairedDeviceId` (в `/sync`) и `callerDeviceId == prefs.pairedDeviceId` (в `onPeerIdentified`) гарантируют, что IP перезаписывается только от сопряжённого устройства.
-
-**`performKeepAlive` не меняли:** он не сохраняет `peerIp` — он его проверяет (отправляет `/identify?deviceId=` к текущему `peerIp`). При провале проверки `peerIp` очищается и запускается scan, как прежде.
-
-`startSubnetScan(confirmedNetwork: Network? = null)` — опциональный параметр `confirmedNetwork` передаётся из `onAvailable`. Если он не `null`, guard `isWifiConnected()` пропускается: мы уже знаем, что сеть есть, потому что это коллбэк от `NetworkCallback`, зарегистрированного только на `TRANSPORT_WIFI`. Без этого параметра `onAvailable` вызывает `startSubnetScan()`, а `isWifiConnected()` внутри смотрит на `activeNetwork`, который в момент `onAvailable` ещё не переключился — race condition, при которой scan проваливается. Когда `confirmedNetwork == null` (вызов из keepAlive, triggerSync и др.), `isWifiConnected()` по-прежнему используется как guard против запуска scan при отключённом WiFi.
+`startSubnetScan(confirmedNetwork: Network? = null)` — если `confirmedNetwork != null` (вызов из `onAvailable`), guard `isWifiConnected()` пропускается: сеть гарантирована коллбэком. Без этого `activeNetwork` в момент `onAvailable` ещё не переключился — race condition, при которой scan проваливается.
 
 ### performKeepAlive — retry identify и диагностика
 
-`performKeepAlive()` делает до **3 попыток** `/identify` к `peerIp` с паузой 3 с между ними. Только если все три вернули `null` или чужой deviceId — IP объявляется устаревшим и запускается scan.
+`performKeepAlive()` делает до **3 попыток** `/identify` к `peerIp` с паузой 3 с между ними. Только если все три вернули `null` или чужой deviceId — IP объявляется устаревшим и запускается scan. Первый SYN может быть поглощён WiFi power-save, вторая попытка застаёт партнёра уже активным.
 
-**Зачем retry:** WiFi power-save может поглощать первый TCP SYN, пока радио «дремлет» между beacon. Первый пакет будит Б, но timeout scanClient (1.5 сек) уже истёк. Вторая попытка через 3 секунды застаёт Б уже активным. Без retry это превращалось в ненужный полный scan.
-
-В начале каждого `performKeepAlive()` логируется снимок состояния устройства (`KeepAlive diag:`): `PowerManager.isDeviceIdleMode`, `isIgnoringBatteryOptimizations`, статус WiFi, наличие активной WiFi-сети, собственный IP, текущий peerIp. Это позволяет понять, в каком состоянии было устройство в момент, когда партнёр не смог до него дозвониться.
+В начале каждого `performKeepAlive()` логируется снимок состояния (`KeepAlive diag:`): `isDeviceIdleMode`, `isIgnoringBatteryOptimizations`, статус WiFi, `ownIp`, `peerIp`.
 
 ### WiFi reconnected — verify retry и отмена verifyJob
 
-Ветка `peerIp != null` в `ipTrackingCallback.onAvailable` делает то же, что `performKeepAlive`: до **3 попыток** `/identify` к сохранённому `peerIp` с паузой 3 с между ними (раньше было одна попытка после задержки 1.5 сек). Только если все три не вернули `pairedDeviceId` — IP считается устаревшим и запускается scan.
-
-**Зачем:** обнаружено по логам — сразу после reconnect (характерно для mesh-сетей, где идёт роуминг между точками) единичный сетевой глитч мог обнулить полностью валидный `peerIp` и заставить устройство уйти в полный subnet scan вместо мгновенного `triggerSync()`. Retry с той же логикой, что уже доказала себя в `performKeepAlive`, переживает этот глитч без лишнего scan.
-
-Корутина с этим retry-циклом теперь хранится в `verifyJob` (аналогично `scanJob`) и отменяется в `wifiReceiver` при `WiFi disconnected` и в `onDestroy()`. Раньше она ничем не отслеживалась: если WiFi отваливался посреди верификации, корутина продолжала достукиваться до уже мёртвой сети вместо немедленной отмены.
+Ветка `peerIp != null` в `ipTrackingCallback.onAvailable`: до **3 попыток** `/identify` с паузой 3 с. Если все три провалились — IP устарел, scan. Retry переживает сетевой глитч сразу после reconnect (характерно для mesh-роуминга), не уходя в лишний scan. Корутина хранится в `verifyJob` и отменяется при `WiFi disconnected` и в `onDestroy()`.
 
 ### MergeTasksUseCase — точечный upsert только изменившихся задач
 
-В цикле merge ведётся отдельный список `toUpsert`, куда попадают только задачи со статусом `added` или `updated`. В конце вызывается `upsertTasks(toUpsert)`, а не весь merged-список. Если `toUpsert` пуст — запись в БД не происходит вообще.
+`toUpsert` содержит только задачи со статусом `added` или `updated`. Если `toUpsert` пуст — запись в БД не происходит. Запись неизменившихся задач создаёт лишнюю транзакцию и провоцирует эмиссию в `observeAllTasks()` → паразитный повторный sync через 3 сек (debounce).
 
-**Почему важно:** `upsertAll()` — одна транзакция, но она касается всех переданных строк. Запись неизменившихся задач — лишний WAL-трафик, который растёт по мере накопления tombstone-ов. Запись при нулевых изменениях создаёт транзакцию и провоцирует эмиссию в `observeAllTasks()` → паразитный повторный sync через 3 секунды (debounce).
-
-Лог-строка после merge:
 ```
 Merge done: +1 new, ~1 updated, =23 unchanged — writing 2/25 tasks to DB
 ```
-Дробь `2/25` = записанных строк / всего в таблице (активные + tombstone-ы).
+`2/25` = записанных / всего в таблице (активные + tombstone-ы).
 
 ### Due-уведомления — отмена привязана к статусу/удалению, а не только к назначению
 
-`NotificationScheduler.scheduleDueNotifications()` / `cancelDueNotifications()` вызываются из трёх мест: `TaskDetailViewModel` (`cycleStatus`, `updateTask`, `delete`), `CreateTaskViewModel` (только создание, всегда `TODO`) и `MergeTasksUseCase` (входящий sync). До фикса 2026-06-17 решение «ставить или отменять» было привязано только к `assignedTo`:
+`NotificationScheduler.scheduleDueNotifications()` / `cancelDueNotifications()` вызываются из: `TaskDetailViewModel` (`cycleStatus`, `updateTask`, `delete`), `CreateTaskViewModel` (только создание) и `MergeTasksUseCase` (входящий sync).
 
-- `cycleStatus()` — быстрый тап по статусу в `TaskDetailScreen`, самый частый способ закрыть свою задачу — вообще не трогал `NotificationScheduler`.
-- `updateTask()` — отменял напоминания только если задача переназначена на другое устройство, не если она стала `done`.
-- `MergeTasksUseCase` — если партнёр закрыл/удалил мою задачу на своём устройстве и это пришло через `/sync`, локальные напоминания не отменялись вообще.
+Условие активности: `assignedTo == myDeviceId && status != DONE && !deleted`. `WorkManager.enqueueUniqueWork` persistent — переживает рестарт и сработает в заданное время независимо от статуса, если явно не отменить через `cancelUniqueWork`.
 
-`scheduleDueNotifications()` ставит `OneTimeWorkRequest` через `enqueueUniqueWork` — persistent-очередь WorkManager переживает рестарт процесса и сработает в заданное время **независимо от текущего статуса задачи**, если её явно не отменить через `cancelUniqueWork`.
+Правила:
+- `TaskDetailViewModel.cycleStatus()` и `updateTask()` используют общий `applyDueNotificationState()`: ставит если eligible, иначе отменяет.
+- `MergeTasksUseCase` (ветка `updated`) сравнивает `wasEligible`/`isEligible` до и после merge.
+- `NotificationScheduler.scheduleDueNotifications()` — если отметка уже в прошлом, явно вызывает `cancelUniqueWork`.
 
-**Зачем фикс:** баг обнаружен по жалобе пользователя — на одном устройстве пришло уведомление "за сутки"/"за час" про задачу, закрытую задолго до этого. Воспроизводится, когда задача назначена на это устройство, у неё есть `dueDate` в будущем на момент назначения, и она была завершена **до** наступления отметки "за сутки"/"за час" — через `cycleStatus()` или через входящий sync от партнёра. Другие давно закрытые задачи на этом же пользователе не проявляли проблему, потому что их `dueDate` уже прошёл к моменту закрытия — оба воркера к тому времени либо уже отстрелялись (валидно, пока задача была ещё открыта), либо не ставились вовсе.
-
-Фикс:
-- `TaskDetailViewModel.cycleStatus()` и `updateTask()` теперь используют общий `applyDueNotificationState()`: ставит напоминания, только если `assignedTo == myDeviceId && status != DONE && !deleted`, иначе отменяет. `delete()` дополнительно вызывает `cancelDueNotifications()`.
-- `MergeTasksUseCase` (ветка `updated`) сравнивает `wasEligible`/`isEligible` (то же условие "назначена на меня + не done + не deleted") до и после merge — отменяет при переходе в неактивное состояние, переставляет при возврате в активное. Ветка `new` не ставит напоминания, если задача пришла уже `done`.
-- `NotificationScheduler.scheduleDueNotifications()` — если отметка "за день"/"за час" уже в прошлом, теперь явно вызывает `cancelUniqueWork` для этого тега (раньше просто ничего не делал, оставляя висеть воркер, поставленный раньше при более позднем `dueDate`).
-
-Каждое решение (schedule/cancel/skip) логируется через `AppLogger.d` — видно в Настройки → Диагностика → Логи синхронизации.
+Каждое решение (schedule/cancel/skip) логируется через `AppLogger.d`. Подробнее о баге: `docs/conventions-rationale.md`.
 
 ### observeTaskChanges — порядок операторов
 
@@ -554,34 +481,4 @@ AppLogger.e(TAG, "ошибка", throwable)
 
 ### Логирование энергозатратных событий
 
-Следующие события логируются специально для анализа энергопотребления:
-
-| Событие | Файл | Уровень | Что анализировать |
-|---|---|---|---|
-| `Scanning 192.168.x.* for ...` | `SubnetScanner` | I | Начало scan — сколько раз запускается в сутки |
-| `Peer found at ...` | `SubnetScanner` | I | Успешный scan — как быстро нашли партнёра |
-| `Scan complete — peer not on subnet` | `SubnetScanner` | I | Партнёр офлайн — scan прошёл впустую |
-| `KeepAlive diag: doze=... battIgnored=... wifiOn=... activeWifi=... ownIp=... peerIp=...` | `SyncService` | I | Снимок состояния устройства в момент keepAlive: Doze-режим, исключение из батарейной оптимизации, статус WiFi, текущий IP |
-| `KeepAlive identify attempt N failed — retrying in 3s` | `SyncService` | D | Попытка N из 3 не вернула pairedDeviceId — ждём и пробуем ещё |
-| `KeepAlive OK — peer still at ...` | `SyncService` | D | Штатный keepAlive — IP не изменился |
-| `KeepAlive failed — peer IP stale` | `SyncService` | I | Все 3 попытки identify не вернули pairedDeviceId → IP устарел → scan |
-| `KeepAlive — no peer IP, starting scan` | `SyncService` | D | peerIp==null при срабатывании таймера → scan |
-| `Peer reached us from ... — saving IP` | `SyncService` | I | Партнёр нашёл нас через scan (входящий /sync) |
-| `Peer reached us from ... via keepAlive — saving IP` | `SyncService` | I | Партнёр восстановил наш IP пассивно через keepAlive |
-| `WiFi connected — starting subnet scan` | `SyncService` | I | peerIp был null → scan запущен при подключении |
-| `WiFi reconnected — verifying peer IP ...` | `SyncService` | D | peerIp есть → задержка 1.5 сек + до 3 попыток /identify |
-| `WiFi reconnected — verify attempt N failed — retrying in 3s` | `SyncService` | D | Попытка N из 3 не вернула pairedDeviceId — ждём и пробуем ещё |
-| `WiFi reconnected — peer confirmed at ...` | `SyncService` | I | /identify подтвердил IP (на любой из 3 попыток) → triggerSync() |
-| `WiFi reconnected — peer IP stale, clearing IP, starting scan` | `SyncService` | I | Все 3 попытки /identify не вернули pairedDeviceId → IP устарел → scan |
-| `WiFi disconnected` | `SyncService` | I | Потеря сети → scan отменён, peerIp сохранён |
-| `Boot completed — starting SyncService` | `BootReceiver` | I | Холодный старт по загрузке системы |
-| `Schedule notification [tag] in Nm` | `NotificationScheduler` | D | Выставление будильника через WorkManager |
-| `Cancel notifications for task ...` | `NotificationScheduler` | D | Отмена будильника WorkManager |
-| `triggerSync skipped — no peer IP, starting scan` | `SyncService` | D | Задача изменилась, пир не найден → запустили scan |
-| `triggerSync skipped — already syncing` | `SyncService` | D | Конкурентные вызовы sync |
-| `Peer unreachable: ... — clearing IP, starting scan` | `SyncService` | W | HTTP timeout: IP очищен, scan перезапущен |
-| `Own IP (...) matches peerIp — self-loop detected on connect, clearing peerIp, starting scan` | `SyncService` | W | DHCP дал нам IP бывшего партнёра при reconnect |
-| `New IP (...) matches peerIp — self-loop detected on IP change, clearing peerIp, starting scan` | `SyncService` | W | DHCP renewal без разрыва — IP сменился на peerIp |
-| `KeepAlive — unexpected deviceId ... at ... (expected ...) — self-loop?` | `SyncService` | W | keepAlive получил не pairedDeviceId — страховочный слой |
-| `Sync response from unexpected device ... at ... (expected ...) — self-loop? Clearing IP, starting scan` | `SyncService` | W | triggerSync поймал гонку: ответ пришёл от себя |
-| `Purged N confirmed tombstone(s)` | `SyncService` | I | После успешного sync (как initiator) — сколько tombstone-задач удалено физически, т.к. партнёр подтвердил, что тоже их пометил как deleted |
+Полная таблица событий с описанием что анализировать — в `docs/log-events.md`.
