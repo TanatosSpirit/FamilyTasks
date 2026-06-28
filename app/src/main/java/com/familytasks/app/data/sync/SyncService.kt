@@ -208,6 +208,11 @@ class SyncService : Service() {
                 )
 
                 val localTasks = syncUseCase.getLocalSnapshot()
+                val responseTasks = if (incoming.sinceTimestamp > 0L) {
+                    localTasks.filter { it.updatedAt > incoming.sinceTimestamp }
+                } else {
+                    localTasks
+                }
                 val localDevices = buildDevicesPayload()
 
                 val now = System.currentTimeMillis()
@@ -216,7 +221,7 @@ class SyncService : Service() {
 
                 SyncPayload(
                     deviceId = deviceIdManager.deviceId,
-                    tasks = localTasks.map { it.toDto() },
+                    tasks = responseTasks.map { it.toDto() },
                     devices = localDevices.map { it.toDto() }
                 )
             },
@@ -383,13 +388,23 @@ class SyncService : Service() {
             AppLogger.i(TAG, "triggerSync → $peerIp")
             syncManager.setSyncState(SyncState.SYNCING)
             try {
+                val snapshotTimestamp = System.currentTimeMillis()
+                val watermark = prefs.lastConfirmedSyncTimestamp
+                    .takeIf { snapshotTimestamp >= it } ?: run {
+                        AppLogger.w(TAG, "Clock jumped back — resetting sync watermark to 0")
+                        prefs.lastConfirmedSyncTimestamp = 0L
+                        0L
+                    }
                 val localTasks = syncUseCase.getLocalSnapshot()
+                val delta = localTasks.filter { it.updatedAt > watermark }
                 val localDevices = buildDevicesPayload()
                 val payload = SyncPayload(
                     deviceId = deviceIdManager.deviceId,
-                    tasks = localTasks.map { it.toDto() },
+                    sinceTimestamp = watermark,
+                    tasks = delta.map { it.toDto() },
                     devices = localDevices.map { it.toDto() }
                 )
+                AppLogger.d(TAG, "Delta: sending ${delta.size}/${localTasks.size} tasks (watermark=$watermark)")
                 val response = httpClient.sync(peerIp, 8080, payload)
                 if (response != null && response.deviceId == prefs.pairedDeviceId) {
                     val remoteTasks = response.tasks.map { it.toDomain() }
@@ -398,11 +413,12 @@ class SyncService : Service() {
                     if (purged > 0) {
                         AppLogger.i(TAG, "Purged $purged confirmed tombstone(s)")
                     }
+                    prefs.lastConfirmedSyncTimestamp = snapshotTimestamp
                     val now = System.currentTimeMillis()
                     prefs.lastSyncAt = now
                     syncManager.setLastSyncAt(now)
                     syncManager.setSyncState(SyncState.SUCCESS)
-                    AppLogger.i(TAG, "Sync OK: sent ${localTasks.size}, received ${response.tasks.size}")
+                    AppLogger.i(TAG, "Sync OK: sent ${delta.size}/${localTasks.size}, received ${response.tasks.size}")
                 } else if (response != null) {
                     AppLogger.w(TAG, "Sync response from unexpected device ${response.deviceId.take(8)} at $peerIp (expected ${prefs.pairedDeviceId?.take(8)}) — self-loop? Clearing IP, starting scan")
                     syncManager.setPeerIp(null)

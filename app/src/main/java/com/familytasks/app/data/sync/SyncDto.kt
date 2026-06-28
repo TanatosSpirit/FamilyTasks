@@ -10,6 +10,7 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class SyncPayload(
     val deviceId: String,
+    val sinceTimestamp: Long = 0L,
     val tasks: List<TaskDto>,
     val devices: List<DeviceDto>
 )

@@ -57,6 +57,10 @@ class PreferencesManager @Inject constructor(
         get() = prefs.getString(KEY_LAST_PEER_IP, null)
         set(value) = prefs.edit().putString(KEY_LAST_PEER_IP, value).apply()
 
+    var lastConfirmedSyncTimestamp: Long
+        get() = prefs.getLong(KEY_LAST_CONFIRMED_SYNC_TS, 0L)
+        set(value) = prefs.edit().putLong(KEY_LAST_CONFIRMED_SYNC_TS, value).apply()
+
     companion object {
         private const val KEY_DEVICE_ID = "device_id"
         private const val KEY_DISPLAY_NAME = "display_name"
@@ -69,5 +73,6 @@ class PreferencesManager @Inject constructor(
         private const val KEY_NOTIFY_STATUS = "notify_status_change"
         private const val KEY_LAST_OWN_IP = "last_own_ip"
         private const val KEY_LAST_PEER_IP = "last_peer_ip"
+        private const val KEY_LAST_CONFIRMED_SYNC_TS = "last_confirmed_sync_ts"
     }
 }
