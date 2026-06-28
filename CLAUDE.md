@@ -260,6 +260,19 @@ Foreground Service **не выводит приложение из Doze** и н�
 - StateFlow для UI-состояния, `collectAsStateWithLifecycle()` в Compose.
 - `combine` с >5 потоками: сначала сгруппировать в промежуточные data-классы (см. `TaskListViewModel`).
 
+### Разделители по датам в списке задач
+
+При `sortOrder == DUE_DATE` и фильтре активных задач список разбивается на именованные секции. Секция создаётся только если на эту дату есть задачи.
+
+| Секция | Условие |
+|---|---|
+| **Просрочено** | `dueDate < todayStart` (до полуночи сегодняшнего дня) |
+| **Сегодня / Завтра** | точное сравнение с полуночью нужного дня |
+| **Пт 25 июля** | остальные будущие дни (`SimpleDateFormat("EE d MMMM", Locale("ru"))`) |
+| **Без срока** | `dueDate == null` |
+
+При сортировке по приоритету/дате создания и в режиме «Готово» разделители не показываются. Реализовано через `sealed class TaskListItem { Header; Item }` и `buildDateGroupedList()` в `TaskListScreen.kt` — ViewModel не затронута. Подробнее: `docs/date-group-headers.md`.
+
 ### Цвет дедлайна в списке задач
 
 Функция `dueDateColor` в `TaskListScreen.kt` принимает `dueDate`, `status` и `completedAt`.

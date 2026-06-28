@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -56,6 +57,7 @@ import com.familytasks.app.domain.model.StatusFilter
 import com.familytasks.app.domain.model.Task
 import com.familytasks.app.domain.model.TaskStatus
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
@@ -133,18 +135,98 @@ fun TaskListScreen(
                     Text("Нет задач", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             } else {
+                val showDateHeaders = state.sortOrder == SortOrder.DUE_DATE &&
+                    state.statusFilter != StatusFilter.DONE
+                val listItems = if (showDateHeaders) {
+                    buildDateGroupedList(state.tasks)
+                } else {
+                    state.tasks.map { TaskListItem.Item(it) }
+                }
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(state.tasks, key = { it.id }) { task ->
-                        TaskCard(
-                            task = task,
-                            creatorColor = state.devices[task.createdBy]?.color,
-                            assigneeColor = task.assignedTo?.let { state.devices[it]?.color },
-                            onClick = { onTaskClick(task.id) }
-                        )
+                    items(listItems, key = { item ->
+                        when (item) {
+                            is TaskListItem.Header -> "header_${item.label}"
+                            is TaskListItem.Item -> item.task.id
+                        }
+                    }) { item ->
+                        when (item) {
+                            is TaskListItem.Header -> DateGroupHeader(item.label)
+                            is TaskListItem.Item -> TaskCard(
+                                task = item.task,
+                                creatorColor = state.devices[item.task.createdBy]?.color,
+                                assigneeColor = item.task.assignedTo?.let { state.devices[it]?.color },
+                                onClick = { onTaskClick(item.task.id) }
+                            )
+                        }
                     }
                 }
             }
         }
+    }
+}
+
+private sealed class TaskListItem {
+    data class Header(val label: String) : TaskListItem()
+    data class Item(val task: Task) : TaskListItem()
+}
+
+private fun buildDateGroupedList(tasks: List<Task>): List<TaskListItem> {
+    val today = Calendar.getInstance().apply {
+        set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+    }
+    val todayStart = today.timeInMillis
+    val tomorrowStart = todayStart + 86_400_000L
+
+    val overdue = tasks.filter { it.dueDate != null && it.dueDate < todayStart }
+    val withDue = tasks.filter { it.dueDate != null && it.dueDate >= todayStart }
+    val noDue = tasks.filter { it.dueDate == null }
+
+    val result = mutableListOf<TaskListItem>()
+
+    if (overdue.isNotEmpty()) {
+        result += TaskListItem.Header("Просрочено")
+        overdue.forEach { result += TaskListItem.Item(it) }
+    }
+
+    val byDay = withDue.groupBy { task ->
+        val cal = Calendar.getInstance().apply { timeInMillis = task.dueDate!! }
+        cal.set(Calendar.HOUR_OF_DAY, 0); cal.set(Calendar.MINUTE, 0)
+        cal.set(Calendar.SECOND, 0); cal.set(Calendar.MILLISECOND, 0)
+        cal.timeInMillis
+    }
+    byDay.keys.sorted().forEach { dayStart ->
+        val label = when {
+            dayStart == todayStart -> "Сегодня"
+            dayStart == tomorrowStart -> "Завтра"
+            else -> SimpleDateFormat("EE d MMMM", Locale("ru")).format(Date(dayStart))
+                .replaceFirstChar { it.uppercaseChar() }
+        }
+        result += TaskListItem.Header(label)
+        byDay[dayStart]!!.forEach { result += TaskListItem.Item(it) }
+    }
+
+    if (noDue.isNotEmpty()) {
+        result += TaskListItem.Header("Без срока")
+        noDue.forEach { result += TaskListItem.Item(it) }
+    }
+
+    return result
+}
+
+@Composable
+private fun DateGroupHeader(label: String) {
+    Column {
+        HorizontalDivider(
+            modifier = Modifier.padding(horizontal = 12.dp),
+            color = MaterialTheme.colorScheme.outlineVariant
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 4.dp)
+        )
     }
 }
 
