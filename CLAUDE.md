@@ -142,7 +142,7 @@ ui/
 | updatedAt | Long | обновляется при каждом изменении |
 | deleted | Boolean | tombstone-флаг, default `false` |
 | completedAt | Long? | Unix timestamp мс момента перехода в `done`; null если статус не `done` или задача завершена до версии 2 БД |
-| recurrence | Recurrence | правило повтора; хранится строкой `repeatRule` (`"none"`, `"days:N"`). См. «Повторяющиеся задачи» |
+| recurrence | Recurrence | правило повтора; хранится строкой `repeatRule` (`"none"`, `"days:N"`, `"weekdays:mon,wed,sat"`). См. «Повторяющиеся задачи» |
 
 В Room enum'ы и `recurrence` хранятся как String (`status.value`, `priority.value`, `recurrence.serialize()`). Конвертация — extension-функции `toDomain()` / `toEntity()` в `TaskEntity.kt`.
 
@@ -182,9 +182,9 @@ ui/
 
 ## Повторяющиеся задачи
 
-Задача с дедлайном и правилом повтора (`«Каждые 1..7 дней»`) **в момент прохождения дедлайна** создаёт клон себя со сдвинутым дедлайном и гасит собственный повтор; клон продолжает цепочку. Обрывается нажатием «Готово». Триггер — `RecurrenceSpawnWorker` (`OneTimeWorkRequest` на момент `dueDate`), отдельный от `DueNotificationWorker`.
+Задача с дедлайном и правилом повтора (`«Каждые 1..7 дней»` или `«По дням недели»`) **в момент прохождения дедлайна** создаёт клон себя со сдвинутым дедлайном и гасит собственный повтор; клон продолжает цепочку. Обрывается нажатием «Готово». Триггер — `RecurrenceSpawnWorker` (`OneTimeWorkRequest` на момент `dueDate`), отдельный от `DueNotificationWorker`.
 
-Ключевые решения: спавн **owner-only** (`assignedTo == myDeviceId`) — убирает распределённую дедупликацию, напарник получает клон по `/sync`; «гашение родителя» (`recurrence = None`) как маркер бесплодности = идемпотентность без поля схемы; правило хранится **строкой** `repeatRule` ради будущего расширения (повтор в конкретный день/дни недели) без миграции и правок движка. Планирование/отмена — `NotificationScheduler.scheduleRecurrenceSpawn` / `cancelRecurrenceSpawn`, из тех же мест, что и due-уведомления.
+Ключевые решения: спавн **owner-only** (`assignedTo == myDeviceId`) — убирает распределённую дедупликацию, напарник получает клон по `/sync`; «гашение родителя» (`recurrence = None`) как маркер бесплодности = идемпотентность без поля схемы; правило хранится **строкой** `repeatRule` — новые подтипы добавляются без миграции и правок движка (движок вызывает только `nextDueDate()`). Планирование/отмена — `NotificationScheduler.scheduleRecurrenceSpawn` / `cancelRecurrenceSpawn`, из тех же мест, что и due-уведомления.
 
 Полное описание, ограничения, план будущих изменений и список тестов: `docs/recurring-tasks.md`.
 
