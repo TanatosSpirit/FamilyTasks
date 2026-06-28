@@ -41,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.familytasks.app.domain.model.Priority
+import com.familytasks.app.domain.model.Recurrence
 import com.familytasks.app.domain.model.Task
 import com.familytasks.app.domain.model.TaskStatus
 import java.text.SimpleDateFormat
@@ -143,6 +144,9 @@ private fun ViewTaskContent(
         if (task.dueDate != null) {
             InfoRow("Срок", SimpleDateFormat("dd MMM yyyy HH:mm", Locale.getDefault()).format(Date(task.dueDate)))
         }
+        if (task.recurrence !is Recurrence.None) {
+            InfoRow("Повтор", recurrenceLabel(task.recurrence))
+        }
         if (task.completedAt != null) {
             InfoRow("Завершена", SimpleDateFormat("dd MMM yyyy HH:mm", Locale.getDefault()).format(Date(task.completedAt)))
         }
@@ -202,3 +206,4 @@ private fun statusLabel(s: TaskStatus) = when (s) {
     TaskStatus.TODO -> "Новая"
     TaskStatus.DONE -> "Выполнена"
 }
+
