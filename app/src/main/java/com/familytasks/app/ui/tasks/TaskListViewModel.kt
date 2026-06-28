@@ -133,14 +133,18 @@ class TaskListViewModel @Inject constructor(
                 }
             }
             .sortedWith(
-                when (f.sortOrder) {
-                    SortOrder.DUE_DATE -> compareBy { it.dueDate ?: Long.MAX_VALUE }
-                    SortOrder.PRIORITY -> compareByDescending {
-                        when (it.priority) {
-                            Priority.HIGH -> 2; Priority.NORMAL -> 1; Priority.LOW -> 0
+                if (f.statusFilter == StatusFilter.DONE) {
+                    compareByDescending { it.completedAt ?: it.updatedAt }
+                } else {
+                    when (f.sortOrder) {
+                        SortOrder.DUE_DATE -> compareBy { it.dueDate ?: Long.MAX_VALUE }
+                        SortOrder.PRIORITY -> compareByDescending {
+                            when (it.priority) {
+                                Priority.HIGH -> 2; Priority.NORMAL -> 1; Priority.LOW -> 0
+                            }
                         }
+                        SortOrder.CREATED_AT -> compareByDescending { it.createdAt }
                     }
-                    SortOrder.CREATED_AT -> compareByDescending { it.createdAt }
                 }
             )
         TaskListUiState(
