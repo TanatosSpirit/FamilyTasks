@@ -87,6 +87,8 @@ class RecurrenceSpawnWorker @AssistedInject constructor(
             taskRepository.upsertTask(clone)
             // Гасим родителя: он больше не плодит (идемпотентность при повторном/устаревшем запуске)
             taskRepository.upsertTask(parent.copy(recurrence = Recurrence.None, updatedAt = now))
+            // Автоспавн — уведомляем владельца, как если бы задачу назначил кто-то другой
+            notificationScheduler.notifyNewTask(clone)
             // У просроченных промежуточных клонов метки −1д/−1ч в прошлом → scheduleDue само отменит их
             notificationScheduler.scheduleDueNotifications(clone)
             spawned++
