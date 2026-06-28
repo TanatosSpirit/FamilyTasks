@@ -317,15 +317,6 @@ private fun TaskCard(
                     )
                 }
             }
-            if (assigneeColor != null) {
-                Spacer(modifier = Modifier.width(8.dp))
-                Box(
-                    modifier = Modifier
-                        .size(24.dp)
-                        .clip(CircleShape)
-                        .background(Color(assigneeColor))
-                )
-            }
             if (task.recurrence != Recurrence.None) {
                 Spacer(modifier = Modifier.width(8.dp))
                 Icon(
@@ -333,6 +324,15 @@ private fun TaskCard(
                     contentDescription = "Повторяется",
                     modifier = Modifier.size(16.dp),
                     tint = MaterialTheme.colorScheme.primary
+                )
+            }
+            if (assigneeColor != null) {
+                Spacer(modifier = Modifier.width(8.dp))
+                Box(
+                    modifier = Modifier
+                        .size(24.dp)
+                        .clip(CircleShape)
+                        .background(Color(assigneeColor))
                 )
             }
             Spacer(modifier = Modifier.width(8.dp))
@@ -343,15 +343,13 @@ private fun TaskCard(
 
 @Composable
 private fun StatusBadge(status: TaskStatus) {
-    val (text, color) = when (status) {
-        TaskStatus.TODO -> "Новая" to Color(0xFF9E9E9E)
-        TaskStatus.DONE -> "Готово" to Color(0xFF4CAF50)
+    if (status == TaskStatus.DONE) {
+        Text(
+            text = "Готово",
+            style = MaterialTheme.typography.labelSmall,
+            color = Color(0xFF4CAF50)
+        )
     }
-    Text(
-        text = text,
-        style = MaterialTheme.typography.labelSmall,
-        color = color
-    )
 }
 
 @Composable
