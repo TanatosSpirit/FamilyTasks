@@ -1,9 +1,11 @@
 package com.familytasks.app.ui.settings
 
+import android.content.Intent
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.familytasks.app.core.DeviceIdManager
 import com.familytasks.app.core.PreferencesManager
+import com.familytasks.app.data.sync.ExportImportManager
 import com.familytasks.app.data.sync.SyncManager
 import com.familytasks.app.domain.model.Device
 import com.familytasks.app.domain.repository.DeviceRepository
@@ -28,7 +30,8 @@ class SettingsViewModel @Inject constructor(
     private val prefs: PreferencesManager,
     private val deviceIdManager: DeviceIdManager,
     private val deviceRepository: DeviceRepository,
-    private val syncManager: SyncManager
+    private val syncManager: SyncManager,
+    private val exportImportManager: ExportImportManager
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(SettingsUiState())
@@ -74,4 +77,10 @@ class SettingsViewModel @Inject constructor(
     }
 
     val deviceShortId: String get() = deviceIdManager.deviceId.take(8)
+
+    fun buildExportIntent(onIntent: (Intent) -> Unit) {
+        viewModelScope.launch {
+            onIntent(exportImportManager.buildShareIntent())
+        }
+    }
 }

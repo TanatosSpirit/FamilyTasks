@@ -2,33 +2,48 @@ package com.familytasks.app
 
 import android.content.Intent
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.lifecycleScope
 import com.familytasks.app.core.PreferencesManager
+import com.familytasks.app.data.sync.ExportImportManager
 import com.familytasks.app.data.sync.SyncService
 import com.familytasks.app.ui.navigation.NavGraph
 import com.familytasks.app.ui.theme.FamilyTasksTheme
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
     @Inject lateinit var prefs: PreferencesManager
+    @Inject lateinit var exportImportManager: ExportImportManager
 
     private var pendingTaskId by mutableStateOf<String?>(null)
+    private var importMessage by mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         startSyncService()
         pendingTaskId = intent?.getStringExtra(EXTRA_TASK_ID)
+        handleImportIntent(intent)
         setContent {
             FamilyTasksTheme {
+                val msg = importMessage
+                LaunchedEffect(msg) {
+                    if (msg != null) {
+                        Toast.makeText(this@MainActivity, msg, Toast.LENGTH_LONG).show()
+                        importMessage = null
+                    }
+                }
                 NavGraph(
                     prefs = prefs,
                     pendingTaskId = pendingTaskId,
@@ -42,6 +57,15 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         pendingTaskId = intent.getStringExtra(EXTRA_TASK_ID)
+        handleImportIntent(intent)
+    }
+
+    private fun handleImportIntent(intent: Intent?) {
+        if (intent?.action != Intent.ACTION_VIEW) return
+        val uri = intent.data ?: return
+        lifecycleScope.launch {
+            importMessage = exportImportManager.importFromUri(uri)
+        }
     }
 
     private fun startSyncService() {

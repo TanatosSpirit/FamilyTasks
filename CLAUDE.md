@@ -62,7 +62,8 @@ data/
   local/         ← Room: TaskEntity, DeviceEntity, TaskDao, DeviceDao, AppDatabase
   repository/    ← TaskRepositoryImpl, DeviceRepositoryImpl
   sync/          ← HttpServer, HttpClient, SubnetScanner, SyncService,
-                    SyncManager, BootReceiver, KeepAliveReceiver
+                    SyncManager, BootReceiver, KeepAliveReceiver,
+                    ExportImportManager
 
 notifications/   ← NotificationScheduler, DueNotificationWorker
 core/            ← DeviceIdManager, PreferencesManager, AppLogger
@@ -190,6 +191,16 @@ ui/
 
 ---
 
+## Синхронизация по файлу (удалённый режим)
+
+Дополнительный механизм для случая когда партнёры в разных сетях. Настройки → «Поделиться задачами» → Share Sheet → файл `familytasks_export.json` в мессенджер. Партнёр открывает файл → «Открыть в FamilyTasks» → автоматический merge → Toast с результатом.
+
+Использует тот же `SyncPayload` формат и `MergeTasksUseCase` что и WiFi-sync. Экспорт — всегда полный снимок (`sinceTimestamp = 0`), delta sync не применяется. Tombstone purge откладывается до следующего WiFi-синка. Повторяющиеся задачи и уведомления работают идентично — оба механизма идут через один `mergeAll()`. Импорт защищён проверкой `payload.deviceId == pairedDeviceId`.
+
+Точка входа — `ExportImportManager.kt`. Подробнее: `docs/file-sync.md`.
+
+---
+
 ## Разрешения
 
 ```xml
@@ -230,6 +241,7 @@ Foreground Service **не выводит приложение из Doze** и н�
 | `PreferencesManager.kt` | все ключи SharedPreferences |
 | `TaskListViewModel.kt` | фильтрация, сортировка, compose state |
 | `AppLogger.kt` | встроенное логирование — singleton, circular buffer 500 записей |
+| `ExportImportManager.kt` | экспорт/импорт задач через файл для удалённого режима |
 | `docs/database-access.md` | все обращения к БД: какие запросы, когда, в каком объёме |
 
 ---

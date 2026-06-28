@@ -128,6 +128,17 @@ fun SettingsScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+            val context = LocalContext.current
+            OutlinedButton(
+                onClick = {
+                    vm.buildExportIntent { intent ->
+                        context.startActivity(Intent.createChooser(intent, "Поделиться задачами"))
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Поделиться задачами")
+            }
             HorizontalDivider()
             BatteryOptimizationSection()
             HorizontalDivider()
