@@ -134,7 +134,7 @@ ui/
 | title | String | обязательно, макс. 200 символов |
 | description | String? | — |
 | assignedTo | String? | deviceId назначенного, null = никому |
-| status | TaskStatus | `todo / in_progress / done` |
+| status | TaskStatus | `todo / done` (два состояния) |
 | priority | Priority | `low / normal / high` |
 | dueDate | Long? | Unix timestamp мс |
 | createdBy | String | deviceId создателя |
@@ -241,7 +241,7 @@ Foreground Service **не выводит приложение из Doze** и н�
 
 ## Конвенции
 
-- Enum-значения хранятся как строки в Room: `"todo"`, `"in_progress"`, `"done"`, `"low"`, `"normal"`, `"high"`.
+- Enum-значения хранятся как строки в Room: `"todo"`, `"done"`, `"low"`, `"normal"`, `"high"`.
 - `updatedAt` обновляется через `System.currentTimeMillis()` при каждом изменении задачи — никогда не проставляется вручную в UI.
 - Удаление задач — только `taskRepository.deleteTask(id, updatedAt)`, который ставит `deleted = true`. Физического удаления нет.
 - `completedAt` выставляется автоматически в `TaskDetailViewModel` (`cycleStatus` и `updateTask`): при переходе в `DONE` → `System.currentTimeMillis()`, при переходе обратно — `null`. В `EditTaskContent` та же логика применяется на стороне UI перед вызовом `onSave`. Никогда не проставлять вручную.
