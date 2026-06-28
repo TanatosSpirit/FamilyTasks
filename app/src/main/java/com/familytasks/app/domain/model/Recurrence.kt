@@ -30,6 +30,12 @@ sealed interface Recurrence {
         override fun nextDueDate(from: Long): Long = from + TimeUnit.DAYS.toMillis(days.toLong())
     }
 
+    /** Повтор каждые [minutes] минут — только для тестирования recurrence. */
+    data class EveryNMinutes(val minutes: Int) : Recurrence {
+        override fun serialize() = "minutes:$minutes"
+        override fun nextDueDate(from: Long): Long = from + TimeUnit.MINUTES.toMillis(minutes.toLong())
+    }
+
     companion object {
         const val MIN_DAYS = 1
         const val MAX_DAYS = 7
@@ -39,6 +45,10 @@ sealed interface Recurrence {
             if (raw.startsWith("days:")) {
                 val n = raw.removePrefix("days:").toIntOrNull()
                 if (n != null && n in MIN_DAYS..MAX_DAYS) return EveryNDays(n)
+            }
+            if (raw.startsWith("minutes:")) {
+                val n = raw.removePrefix("minutes:").toIntOrNull()
+                if (n != null && n > 0) return EveryNMinutes(n)
             }
             return None
         }

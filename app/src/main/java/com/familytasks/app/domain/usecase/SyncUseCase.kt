@@ -22,10 +22,11 @@ class SyncUseCase @Inject constructor(
         }
     }
 
-    // Safe to purge: peer's response shows it already holds the same id as deleted too.
+    // Safe to purge if peer confirmed deleted=true, OR if peer doesn't have the task at all (peer already purged it).
     suspend fun purgeConfirmedTombstones(sentTasks: List<Task>, remoteTasks: List<Task>): Int {
+        val remoteIds = remoteTasks.mapTo(mutableSetOf()) { it.id }
         val remoteDeletedIds = remoteTasks.asSequence().filter { it.deleted }.mapTo(mutableSetOf()) { it.id }
-        val purgeableIds = sentTasks.filter { it.deleted && it.id in remoteDeletedIds }.map { it.id }
+        val purgeableIds = sentTasks.filter { it.deleted && (it.id in remoteDeletedIds || it.id !in remoteIds) }.map { it.id }
         if (purgeableIds.isNotEmpty()) {
             taskRepository.purgeTasks(purgeableIds)
         }

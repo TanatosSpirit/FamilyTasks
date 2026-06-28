@@ -330,7 +330,11 @@ NanoHTTPD кладёт IP входящего подключения в заго�
 
 ### triggerSync — purge подтверждённых tombstone-задач после успешного sync
 
-После успешного `mergeAll(response...)` (ветка `response.deviceId == prefs.pairedDeviceId`) вызывается `syncUseCase.purgeConfirmedTombstones(localTasks, remoteTasks)` — физически удаляет из локальной БД tombstone-задачи (`deleted = true`), которые мы отправили **и** которые партнёр в ответе тоже отметил как `deleted = true`. Проверка по пересечению страхует от LWW-конфликта: если у партнёра более свежая активная версия, в `remoteTasks` придёт `deleted = false` — задача не удалится. Подробнее: `docs/conventions-rationale.md`.
+После успешного `mergeAll(response...)` (ветка `response.deviceId == prefs.pairedDeviceId`) вызывается `syncUseCase.purgeConfirmedTombstones(localTasks, remoteTasks)` — физически удаляет из локальной БД tombstone-задачи (`deleted = true`), которые мы отправили, и для которых партнёр либо **тоже ответил `deleted = true`**, либо **не прислал задачу вовсе** (значит уже purge'ил). LWW-конфликт по-прежнему защищён: если партнёр ответил живой версией (`deleted = false`, `id in remoteIds`) — задача не удалится. Подробнее: `docs/conventions-rationale.md`.
+
+### MergeTasksUseCase — tombstone для неизвестной задачи игнорируется
+
+Если входящая задача имеет `deleted = true` и её нет в локальной БД (`local == null`) — она считается `unchanged` и не пишется в БД. Это предотвращает бесконечный sync-цикл после `purgeConfirmedTombstones`: purge физически удаляет tombstone, но партнёр (не успевший сделать свой purge) шлёт его обратно. Без этого правила tombstone возвращался бы как «New», писался в БД, срабатывал `observeTaskChanges` → новый `triggerSync` → цикл. Для двухустройственной системы это безопасно: некому реплицировать tombstone дальше. Подробнее: `docs/conventions-rationale.md`.
 
 ### Self-loop detection — защита от синка с собой
 

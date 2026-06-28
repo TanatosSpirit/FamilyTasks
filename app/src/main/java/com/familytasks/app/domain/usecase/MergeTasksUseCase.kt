@@ -26,6 +26,7 @@ class MergeTasksUseCase @Inject constructor(
         for (remote in remoteTasks) {
             val local = localTasks[remote.id]
             when {
+                local == null && remote.deleted -> unchanged++
                 local == null -> {
                     localTasks[remote.id] = remote
                     toUpsert.add(remote)

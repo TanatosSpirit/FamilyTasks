@@ -24,6 +24,10 @@ fun recurrenceLabel(recurrence: Recurrence): String = when (recurrence) {
         in 2..4 -> "Каждые ${recurrence.days} дня"
         else -> "Каждые ${recurrence.days} дней"
     }
+    is Recurrence.EveryNMinutes -> when {
+        recurrence.minutes % 60 == 0 -> "Каждый ${recurrence.minutes / 60} ч (тест)"
+        else -> "Каждые ${recurrence.minutes / 60} ч ${recurrence.minutes % 60} мин (тест)"
+    }
 }
 
 /**
@@ -40,7 +44,8 @@ fun RecurrencePicker(
 ) {
     val options = remember {
         listOf<Recurrence>(Recurrence.None) +
-            (Recurrence.MIN_DAYS..Recurrence.MAX_DAYS).map { Recurrence.EveryNDays(it) }
+            (Recurrence.MIN_DAYS..Recurrence.MAX_DAYS).map { Recurrence.EveryNDays(it) } +
+            listOf(Recurrence.EveryNMinutes(60), Recurrence.EveryNMinutes(65))
     }
     var expanded by remember { mutableStateOf(false) }
 
