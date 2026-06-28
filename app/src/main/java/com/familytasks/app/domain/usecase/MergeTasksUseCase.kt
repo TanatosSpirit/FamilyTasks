@@ -2,6 +2,7 @@ package com.familytasks.app.domain.usecase
 
 import com.familytasks.app.core.AppLogger
 import com.familytasks.app.core.DeviceIdManager
+import com.familytasks.app.domain.model.Recurrence
 import com.familytasks.app.domain.model.Task
 import com.familytasks.app.domain.model.TaskStatus
 import com.familytasks.app.domain.repository.TaskRepository
@@ -36,6 +37,10 @@ class MergeTasksUseCase @Inject constructor(
                         if (remote.status != TaskStatus.DONE) {
                             AppLogger.d(TAG, "New task '${remote.title}' is open — scheduling due reminders")
                             notificationScheduler.scheduleDueNotifications(remote)
+                            if (remote.recurrence != Recurrence.None) {
+                                AppLogger.d(TAG, "New task '${remote.title}' recurs (${remote.recurrence.serialize()}) and assigned to me — scheduling spawn")
+                                notificationScheduler.scheduleRecurrenceSpawn(remote)
+                            }
                         } else {
                             AppLogger.d(TAG, "New task '${remote.title}' arrived already done — skipping due reminders")
                         }
@@ -62,6 +67,15 @@ class MergeTasksUseCase @Inject constructor(
                                 "status=${remote.status}, deleted=${remote.deleted}) — cancelling due reminders"
                         )
                         notificationScheduler.cancelDueNotifications(remote.id)
+                    }
+                    // Повтор (owner-only): пока задача активна+моя и повторяется — держим spawn-воркер
+                    // актуальным (REPLACE подхватит изменённый партнёром дедлайн/правило); иначе отменяем.
+                    if (isEligible && remote.recurrence != Recurrence.None) {
+                        AppLogger.d(TAG, "Sync: '${remote.title}' active+mine, recurs (${remote.recurrence.serialize()}) — (re)scheduling spawn")
+                        notificationScheduler.scheduleRecurrenceSpawn(remote)
+                    } else if (wasEligible && local.recurrence != Recurrence.None) {
+                        AppLogger.d(TAG, "Sync: '${remote.title}' no longer active+mine+recurring — cancelling spawn")
+                        notificationScheduler.cancelRecurrenceSpawn(remote.id)
                     }
                 }
                 else -> unchanged++

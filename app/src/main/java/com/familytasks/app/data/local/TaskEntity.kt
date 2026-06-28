@@ -3,6 +3,7 @@ package com.familytasks.app.data.local
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 import com.familytasks.app.domain.model.Priority
+import com.familytasks.app.domain.model.Recurrence
 import com.familytasks.app.domain.model.Task
 import com.familytasks.app.domain.model.TaskStatus
 
@@ -19,7 +20,8 @@ data class TaskEntity(
     val createdAt: Long,
     val updatedAt: Long,
     val deleted: Boolean,
-    val completedAt: Long? = null
+    val completedAt: Long? = null,
+    val repeatRule: String = "none"
 )
 
 fun TaskEntity.toDomain() = Task(
@@ -34,7 +36,8 @@ fun TaskEntity.toDomain() = Task(
     createdAt = createdAt,
     updatedAt = updatedAt,
     deleted = deleted,
-    completedAt = completedAt
+    completedAt = completedAt,
+    recurrence = Recurrence.parse(repeatRule)
 )
 
 fun Task.toEntity() = TaskEntity(
@@ -49,5 +52,6 @@ fun Task.toEntity() = TaskEntity(
     createdAt = createdAt,
     updatedAt = updatedAt,
     deleted = deleted,
-    completedAt = completedAt
+    completedAt = completedAt,
+    repeatRule = recurrence.serialize()
 )

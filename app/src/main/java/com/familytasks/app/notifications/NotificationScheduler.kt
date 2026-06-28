@@ -13,6 +13,7 @@ import androidx.work.workDataOf
 import com.familytasks.app.MainActivity
 import com.familytasks.app.core.AppLogger
 import com.familytasks.app.core.PreferencesManager
+import com.familytasks.app.domain.model.Recurrence
 import com.familytasks.app.domain.model.Task
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.concurrent.TimeUnit
@@ -93,6 +94,37 @@ class NotificationScheduler @Inject constructor(
         AppLogger.d(TAG, "Cancel notifications for task ${taskId.take(8)}")
         cancelWork(taskId + "_day")
         cancelWork(taskId + "_hour")
+    }
+
+    /**
+     * Заводит [RecurrenceSpawnWorker] на момент дедлайна задачи. Вызывать только когда
+     * задача назначена на это устройство (`assignedTo == myDeviceId`) и активна —
+     * owner-only гарантирует, что клон породит ровно одно устройство. Воркер на старте
+     * перепроверяет все условия сам. Политика REPLACE: правка дедлайна перепланирует.
+     */
+    fun scheduleRecurrenceSpawn(task: Task) {
+        val dueDate = task.dueDate
+        if (task.recurrence == Recurrence.None || dueDate == null) {
+            AppLogger.d(TAG, "scheduleRecurrenceSpawn skipped for '${task.title}' — no recurrence or due date")
+            return
+        }
+        val delay = (dueDate - System.currentTimeMillis()).coerceAtLeast(0L)
+        AppLogger.d(TAG, "Schedule recurrence spawn [${task.id.take(8)}_spawn] in ${delay / 60_000}m (rule=${task.recurrence.serialize()})")
+        val request = OneTimeWorkRequestBuilder<RecurrenceSpawnWorker>()
+            .setInitialDelay(delay, TimeUnit.MILLISECONDS)
+            .setInputData(
+                workDataOf(
+                    RecurrenceSpawnWorker.KEY_TASK_ID to task.id,
+                    RecurrenceSpawnWorker.KEY_EXPECTED_DUE to dueDate
+                )
+            )
+            .build()
+        WorkManager.getInstance(context).enqueueUniqueWork(task.id + "_spawn", ExistingWorkPolicy.REPLACE, request)
+    }
+
+    fun cancelRecurrenceSpawn(taskId: String) {
+        AppLogger.d(TAG, "Cancel recurrence spawn for task ${taskId.take(8)}")
+        cancelWork(taskId + "_spawn")
     }
 
     private fun cancelWork(tag: String) {

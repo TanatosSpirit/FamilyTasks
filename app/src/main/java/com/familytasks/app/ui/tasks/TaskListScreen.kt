@@ -17,6 +17,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material3.Card
@@ -49,6 +50,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.familytasks.app.data.sync.SyncState
 import com.familytasks.app.domain.model.AssigneeFilter
 import com.familytasks.app.domain.model.Priority
+import com.familytasks.app.domain.model.Recurrence
 import com.familytasks.app.domain.model.SortOrder
 import com.familytasks.app.domain.model.StatusFilter
 import com.familytasks.app.domain.model.Task
@@ -240,6 +242,15 @@ private fun TaskCard(
                         .size(24.dp)
                         .clip(CircleShape)
                         .background(Color(assigneeColor))
+                )
+            }
+            if (task.recurrence != Recurrence.None) {
+                Spacer(modifier = Modifier.width(8.dp))
+                Icon(
+                    imageVector = Icons.Default.Refresh,
+                    contentDescription = "Повторяется",
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.primary
                 )
             }
             Spacer(modifier = Modifier.width(8.dp))

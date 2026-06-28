@@ -12,5 +12,6 @@ data class Task(
     val createdAt: Long,
     val updatedAt: Long,
     val deleted: Boolean = false,
-    val completedAt: Long? = null
+    val completedAt: Long? = null,
+    val recurrence: Recurrence = Recurrence.None
 )

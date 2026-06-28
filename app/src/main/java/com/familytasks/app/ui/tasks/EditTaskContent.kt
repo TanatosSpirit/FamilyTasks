@@ -27,6 +27,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.familytasks.app.domain.model.Device
 import com.familytasks.app.domain.model.Priority
+import com.familytasks.app.domain.model.Recurrence
 import com.familytasks.app.domain.model.Task
 import com.familytasks.app.domain.model.TaskStatus
 import java.text.SimpleDateFormat
@@ -50,6 +51,7 @@ fun EditTaskContent(
     var status by remember { mutableStateOf(task.status) }
     var assignedTo by remember { mutableStateOf(task.assignedTo) }
     var dueDate by remember { mutableLongStateOf(task.dueDate ?: 0L) }
+    var recurrence by remember { mutableStateOf(task.recurrence) }
 
     fun pickDateTime() {
         val cal = Calendar.getInstance()
@@ -136,6 +138,11 @@ fun EditTaskContent(
                 OutlinedButton(onClick = { dueDate = 0L }) { Text("Убрать") }
             }
         }
+        // Повтор завязан на владельца и дедлайн — показываем только когда оба заданы
+        if (assignedTo != null && dueDate > 0L) {
+            Text("Повторение")
+            RecurrencePicker(value = recurrence, onValueChange = { recurrence = it })
+        }
         Spacer(modifier = Modifier.height(8.dp))
         Button(
             onClick = {
@@ -151,7 +158,9 @@ fun EditTaskContent(
                     status = status,
                     assignedTo = assignedTo,
                     dueDate = if (dueDate > 0L) dueDate else null,
-                    completedAt = completedAt
+                    completedAt = completedAt,
+                    // Повтор имеет смысл только с ответственным и дедлайном — иначе гасим
+                    recurrence = if (assignedTo != null && dueDate > 0L) recurrence else Recurrence.None
                 ))
             },
             enabled = title.isNotBlank(),

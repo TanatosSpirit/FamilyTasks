@@ -63,8 +63,9 @@ class TaskDetailViewModel @Inject constructor(
         val task = _task.value ?: return
         viewModelScope.launch {
             taskRepository.deleteTask(task.id, System.currentTimeMillis())
-            AppLogger.d(TAG, "delete: '${task.title}' deleted — cancelling due reminders")
+            AppLogger.d(TAG, "delete: '${task.title}' deleted — cancelling due reminders + recurrence")
             notificationScheduler.cancelDueNotifications(task.id)
+            notificationScheduler.cancelRecurrenceSpawn(task.id)
             launch(kotlinx.coroutines.Dispatchers.Main) { onDone() }
         }
     }
@@ -90,15 +91,18 @@ class TaskDetailViewModel @Inject constructor(
             updated.status != TaskStatus.DONE &&
             !updated.deleted
         if (eligible) {
-            AppLogger.d(TAG, "$source: '${updated.title}' active and assigned to me — scheduling due reminders")
+            AppLogger.d(TAG, "$source: '${updated.title}' active and assigned to me — scheduling due reminders + recurrence")
             notificationScheduler.scheduleDueNotifications(updated)
+            // scheduleRecurrenceSpawn сам no-op, если recurrence == None или нет дедлайна
+            notificationScheduler.scheduleRecurrenceSpawn(updated)
         } else {
             AppLogger.d(
                 TAG,
                 "$source: '${updated.title}' not active+mine (assignedTo=${if (updated.assignedTo == deviceIdManager.deviceId) "me" else "other"}, " +
-                    "status=${updated.status}, deleted=${updated.deleted}) — cancelling due reminders"
+                    "status=${updated.status}, deleted=${updated.deleted}) — cancelling due reminders + recurrence"
             )
             notificationScheduler.cancelDueNotifications(updated.id)
+            notificationScheduler.cancelRecurrenceSpawn(updated.id)
         }
     }
 

@@ -6,6 +6,7 @@ import com.familytasks.app.core.DeviceIdManager
 import com.familytasks.app.core.PreferencesManager
 import com.familytasks.app.domain.model.Device
 import com.familytasks.app.domain.model.Priority
+import com.familytasks.app.domain.model.Recurrence
 import com.familytasks.app.domain.model.Task
 import com.familytasks.app.domain.model.TaskStatus
 import com.familytasks.app.domain.repository.DeviceRepository
@@ -49,9 +50,12 @@ class CreateTaskViewModel @Inject constructor(
         priority: Priority,
         assignedTo: String?,
         dueDate: Long?,
+        recurrence: Recurrence,
         onDone: () -> Unit
     ) {
         val now = System.currentTimeMillis()
+        // Повтор имеет смысл только с ответственным и дедлайном — иначе гасим.
+        val effectiveRecurrence = if (assignedTo != null && dueDate != null) recurrence else Recurrence.None
         val task = Task(
             id = UUID.randomUUID().toString(),
             title = title.trim(),
@@ -62,12 +66,14 @@ class CreateTaskViewModel @Inject constructor(
             dueDate = dueDate,
             createdBy = deviceIdManager.deviceId,
             createdAt = now,
-            updatedAt = now
+            updatedAt = now,
+            recurrence = effectiveRecurrence
         )
         viewModelScope.launch {
             taskRepository.upsertTask(task)
             if (task.assignedTo == deviceIdManager.deviceId) {
                 notificationScheduler.scheduleDueNotifications(task)
+                notificationScheduler.scheduleRecurrenceSpawn(task)
             }
             launch(kotlinx.coroutines.Dispatchers.Main) { onDone() }
         }

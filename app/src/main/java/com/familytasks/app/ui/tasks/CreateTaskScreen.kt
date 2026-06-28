@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.familytasks.app.domain.model.Priority
+import com.familytasks.app.domain.model.Recurrence
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -56,6 +57,7 @@ fun CreateTaskScreen(
     var priority by remember { mutableStateOf(Priority.NORMAL) }
     var assignedTo by remember { mutableStateOf<String?>(null) }
     var dueDate by remember { mutableLongStateOf(0L) }
+    var recurrence by remember { mutableStateOf<Recurrence>(Recurrence.None) }
 
     fun pickDateTime() {
         val cal = Calendar.getInstance()
@@ -141,10 +143,23 @@ fun CreateTaskScreen(
                     OutlinedButton(onClick = { dueDate = 0L }) { Text("Убрать") }
                 }
             }
+            // Повтор завязан на владельца и дедлайн — показываем только когда оба заданы
+            if (assignedTo != null && dueDate > 0) {
+                Text("Повторение", style = MaterialTheme.typography.titleSmall)
+                RecurrencePicker(value = recurrence, onValueChange = { recurrence = it })
+            }
             Spacer(modifier = Modifier.height(8.dp))
             Button(
                 onClick = {
-                    vm.save(title, description, priority, assignedTo, if (dueDate > 0) dueDate else null, onBack)
+                    vm.save(
+                        title,
+                        description,
+                        priority,
+                        assignedTo,
+                        if (dueDate > 0) dueDate else null,
+                        recurrence,
+                        onBack
+                    )
                 },
                 enabled = title.isNotBlank(),
                 modifier = Modifier.fillMaxWidth()
