@@ -25,7 +25,7 @@ class HttpServer(
     }
 
     private fun handleIdentify(session: IHTTPSession): Response {
-        val callerDeviceId = session.parms["deviceId"]
+        val callerDeviceId = session.parameters["deviceId"]?.firstOrNull()
         val senderIp = session.headers["remote-addr"] ?: ""
         AppLogger.d(TAG, "/identify from $senderIp" + if (callerDeviceId != null) " deviceId=${callerDeviceId.take(8)}" else "")
         if (callerDeviceId != null && senderIp.isNotEmpty()) {

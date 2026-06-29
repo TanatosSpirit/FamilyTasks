@@ -365,6 +365,7 @@ class SyncService : Service() {
         }
     }
 
+    @OptIn(kotlinx.coroutines.FlowPreview::class)
     private fun observeTaskChanges() {
         scope.launch {
             taskRepository.observeAllTasks()
