@@ -40,6 +40,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -209,9 +210,9 @@ class SyncService : Service() {
 
                 val localTasks = syncUseCase.getLocalSnapshot()
                 val responseTasks = if (incoming.sinceTimestamp > 0L) {
-                    localTasks.filter { it.updatedAt > incoming.sinceTimestamp }
+                    localTasks.filter { !it.isSecret && it.updatedAt > incoming.sinceTimestamp }
                 } else {
-                    localTasks
+                    localTasks.filter { !it.isSecret }
                 }
                 val localDevices = buildDevicesPayload()
 
@@ -367,6 +368,7 @@ class SyncService : Service() {
     private fun observeTaskChanges() {
         scope.launch {
             taskRepository.observeAllTasks()
+                .map { tasks -> tasks.filter { !it.isSecret } }
                 .distinctUntilChanged()
                 .drop(1)
                 .debounce(3_000L)
@@ -396,7 +398,7 @@ class SyncService : Service() {
                         0L
                     }
                 val localTasks = syncUseCase.getLocalSnapshot()
-                val delta = localTasks.filter { it.updatedAt > watermark }
+                val delta = localTasks.filter { !it.isSecret && it.updatedAt > watermark }
                 val localDevices = buildDevicesPayload()
                 val payload = SyncPayload(
                     deviceId = deviceIdManager.deviceId,

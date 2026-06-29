@@ -18,6 +18,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sort
@@ -306,6 +307,15 @@ private fun TaskCard(
                         color = dueDateColor(task.dueDate, task.status, task.completedAt)
                     )
                 }
+            }
+            if (task.isSecret) {
+                Spacer(modifier = Modifier.width(8.dp))
+                Icon(
+                    imageVector = Icons.Default.Lock,
+                    contentDescription = "Секретная",
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
             if (task.recurrence != Recurrence.None) {
                 Spacer(modifier = Modifier.width(8.dp))

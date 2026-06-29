@@ -21,7 +21,8 @@ data class TaskEntity(
     val updatedAt: Long,
     val deleted: Boolean,
     val completedAt: Long? = null,
-    val repeatRule: String = "none"
+    val repeatRule: String = "none",
+    val isSecret: Boolean = false
 )
 
 fun TaskEntity.toDomain() = Task(
@@ -37,7 +38,8 @@ fun TaskEntity.toDomain() = Task(
     updatedAt = updatedAt,
     deleted = deleted,
     completedAt = completedAt,
-    recurrence = Recurrence.parse(repeatRule)
+    recurrence = Recurrence.parse(repeatRule),
+    isSecret = isSecret
 )
 
 fun Task.toEntity() = TaskEntity(
@@ -53,5 +55,6 @@ fun Task.toEntity() = TaskEntity(
     updatedAt = updatedAt,
     deleted = deleted,
     completedAt = completedAt,
-    repeatRule = recurrence.serialize()
+    repeatRule = recurrence.serialize(),
+    isSecret = isSecret
 )

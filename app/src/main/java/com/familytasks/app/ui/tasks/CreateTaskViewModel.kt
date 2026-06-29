@@ -51,6 +51,7 @@ class CreateTaskViewModel @Inject constructor(
         assignedTo: String?,
         dueDate: Long?,
         recurrence: Recurrence,
+        isSecret: Boolean,
         onDone: () -> Unit
     ) {
         val now = System.currentTimeMillis()
@@ -67,7 +68,8 @@ class CreateTaskViewModel @Inject constructor(
             createdBy = deviceIdManager.deviceId,
             createdAt = now,
             updatedAt = now,
-            recurrence = effectiveRecurrence
+            recurrence = effectiveRecurrence,
+            isSecret = isSecret
         )
         viewModelScope.launch {
             taskRepository.upsertTask(task)

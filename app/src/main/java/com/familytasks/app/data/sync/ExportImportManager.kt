@@ -26,7 +26,7 @@ class ExportImportManager @Inject constructor(
     private val json = Json { ignoreUnknownKeys = true }
 
     suspend fun buildShareIntent(): Intent {
-        val tasks = syncUseCase.getLocalSnapshot()
+        val tasks = syncUseCase.getLocalSnapshot().filter { !it.isSecret }
         val me = Device(
             deviceId = deviceIdManager.deviceId,
             displayName = prefs.displayName,

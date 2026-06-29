@@ -13,9 +13,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.ui.Alignment
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -52,6 +55,7 @@ fun EditTaskContent(
     var assignedTo by remember { mutableStateOf(task.assignedTo) }
     var dueDate by remember { mutableLongStateOf(task.dueDate ?: 0L) }
     var recurrence by remember { mutableStateOf(task.recurrence) }
+    var isSecret by remember { mutableStateOf(task.isSecret) }
 
     fun pickDateTime() {
         val cal = Calendar.getInstance()
@@ -143,6 +147,14 @@ fun EditTaskContent(
             Text("Повторение")
             RecurrencePicker(value = recurrence, onValueChange = { recurrence = it })
         }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Секретная задача", style = MaterialTheme.typography.bodyMedium)
+            Switch(checked = isSecret, onCheckedChange = { isSecret = it })
+        }
         Spacer(modifier = Modifier.height(8.dp))
         Button(
             onClick = {
@@ -160,7 +172,8 @@ fun EditTaskContent(
                     dueDate = if (dueDate > 0L) dueDate else null,
                     completedAt = completedAt,
                     // Повтор имеет смысл только с ответственным и дедлайном — иначе гасим
-                    recurrence = if (assignedTo != null && dueDate > 0L) recurrence else Recurrence.None
+                    recurrence = if (assignedTo != null && dueDate > 0L) recurrence else Recurrence.None,
+                    isSecret = isSecret
                 ))
             },
             enabled = title.isNotBlank(),

@@ -23,8 +23,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.ui.Alignment
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -58,6 +60,7 @@ fun CreateTaskScreen(
     var assignedTo by remember { mutableStateOf<String?>(null) }
     var dueDate by remember { mutableLongStateOf(0L) }
     var recurrence by remember { mutableStateOf<Recurrence>(Recurrence.None) }
+    var isSecret by remember { mutableStateOf(false) }
 
     fun pickDateTime() {
         val cal = Calendar.getInstance()
@@ -148,6 +151,14 @@ fun CreateTaskScreen(
                 Text("Повторение", style = MaterialTheme.typography.titleSmall)
                 RecurrencePicker(value = recurrence, onValueChange = { recurrence = it })
             }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Секретная задача", style = MaterialTheme.typography.bodyMedium)
+                Switch(checked = isSecret, onCheckedChange = { isSecret = it })
+            }
             Spacer(modifier = Modifier.height(8.dp))
             Button(
                 onClick = {
@@ -158,6 +169,7 @@ fun CreateTaskScreen(
                         assignedTo,
                         if (dueDate > 0) dueDate else null,
                         recurrence,
+                        isSecret,
                         onBack
                     )
                 },

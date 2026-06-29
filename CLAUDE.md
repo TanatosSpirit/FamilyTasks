@@ -144,10 +144,11 @@ ui/
 | deleted | Boolean | tombstone-флаг, default `false` |
 | completedAt | Long? | Unix timestamp мс момента перехода в `done`; null если статус не `done` или задача завершена до версии 2 БД |
 | recurrence | Recurrence | правило повтора; хранится строкой `repeatRule` (`"none"`, `"days:N"`, `"weekdays:mon,wed,sat"`). См. «Повторяющиеся задачи» |
+| isSecret | Boolean | `false` по умолчанию. Только локально: не передаётся при WiFi-sync и не попадает в файловый экспорт. В `TaskDto` поля нет — `isSecret` никогда не покидает устройство. В списке отображается иконкой замка. |
 
 В Room enum'ы и `recurrence` хранятся как String (`status.value`, `priority.value`, `recurrence.serialize()`). Конвертация — extension-функции `toDomain()` / `toEntity()` в `TaskEntity.kt`.
 
-**Схема БД: версия 3.** `MIGRATION_1_2` добавила `completedAt INTEGER` (nullable); `MIGRATION_2_3` добавила `repeatRule TEXT NOT NULL DEFAULT 'none'`. Обе в `AppDatabase.kt`. Задачи, завершённые до v2, имеют `completedAt = null`.
+**Схема БД: версия 4.** `MIGRATION_1_2` добавила `completedAt INTEGER` (nullable); `MIGRATION_2_3` добавила `repeatRule TEXT NOT NULL DEFAULT 'none'`; `MIGRATION_3_4` добавила `isSecret INTEGER NOT NULL DEFAULT 0`. Все в `AppDatabase.kt`. Задачи, завершённые до v2, имеют `completedAt = null`.
 
 ### Device (SharedPreferences + Room)
 
