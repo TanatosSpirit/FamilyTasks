@@ -153,7 +153,6 @@ fun TaskListScreen(
                             is TaskListItem.Header -> DateGroupHeader(item.label)
                             is TaskListItem.Item -> TaskCard(
                                 task = item.task,
-                                creatorColor = state.devices[item.task.createdBy]?.color,
                                 assigneeColor = item.task.assignedTo?.let { state.devices[it]?.color },
                                 onClick = { onTaskClick(item.task.id) }
                             )
@@ -275,7 +274,6 @@ private fun FilterRow(
 @Composable
 private fun TaskCard(
     task: Task,
-    creatorColor: Int?,
     assigneeColor: Int?,
     onClick: () -> Unit
 ) {
@@ -292,15 +290,7 @@ private fun TaskCard(
             modifier = Modifier.padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            if (creatorColor != null) {
-                Box(
-                    modifier = Modifier
-                        .size(10.dp)
-                        .clip(CircleShape)
-                        .background(Color(creatorColor))
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-            }
+
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = task.title,
