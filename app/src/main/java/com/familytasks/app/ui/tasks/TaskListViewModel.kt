@@ -48,7 +48,8 @@ data class TaskListUiState(
 private data class Filters(
     val assigneeFilter: AssigneeFilter,
     val statusFilter: StatusFilter,
-    val sortOrder: SortOrder
+    val sortOrder: SortOrder,
+    val hideSecretTasks: Boolean
 )
 
 private data class SyncStatus(
@@ -100,8 +101,8 @@ class TaskListViewModel @Inject constructor(
              caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET))
     }
 
-    private val filters = combine(_assigneeFilter, _statusFilter, _sortOrder) { a, s, o ->
-        Filters(a, s, o)
+    private val filters = combine(_assigneeFilter, _statusFilter, _sortOrder, prefs.hideSecretTasksFlow) { a, s, o, h ->
+        Filters(a, s, o, h)
     }
 
     private val syncStatus = combine(
@@ -122,6 +123,7 @@ class TaskListViewModel @Inject constructor(
         val deviceMap = deviceList.associateBy { it.deviceId }
         val filtered = rawTasks
             .filter { !it.deleted }
+            .filter { task -> !f.hideSecretTasks || !task.isSecret }
             .filter { task ->
                 when (f.statusFilter) {
                     StatusFilter.ACTIVE -> task.status != TaskStatus.DONE

@@ -52,7 +52,7 @@ fun EditTaskContent(
     var description by remember { mutableStateOf(task.description ?: "") }
     var priority by remember { mutableStateOf(task.priority) }
     var status by remember { mutableStateOf(task.status) }
-    var assignedTo by remember { mutableStateOf(task.assignedTo) }
+    var assignedTo by remember { mutableStateOf(if (task.isSecret) myDeviceId else task.assignedTo) }
     var dueDate by remember { mutableLongStateOf(task.dueDate ?: 0L) }
     var recurrence by remember { mutableStateOf(task.recurrence) }
     var isSecret by remember { mutableStateOf(task.isSecret) }
@@ -119,17 +119,27 @@ fun EditTaskContent(
         if (devices.isNotEmpty()) {
             Text("Назначить")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(
-                    selected = assignedTo == null,
-                    onClick = { assignedTo = null },
-                    label = { Text("Никому") }
-                )
-                devices.forEach { d ->
+                if (isSecret) {
+                    devices.find { it.deviceId == myDeviceId }?.let { me ->
+                        FilterChip(
+                            selected = true,
+                            onClick = {},
+                            label = { Text(me.displayName.ifBlank { me.deviceId.take(4) }) }
+                        )
+                    }
+                } else {
                     FilterChip(
-                        selected = assignedTo == d.deviceId,
-                        onClick = { assignedTo = d.deviceId },
-                        label = { Text(d.displayName.ifBlank { d.deviceId.take(4) }) }
+                        selected = assignedTo == null,
+                        onClick = { assignedTo = null },
+                        label = { Text("Никому") }
                     )
+                    devices.forEach { d ->
+                        FilterChip(
+                            selected = assignedTo == d.deviceId,
+                            onClick = { assignedTo = d.deviceId },
+                            label = { Text(d.displayName.ifBlank { d.deviceId.take(4) }) }
+                        )
+                    }
                 }
             }
         }
@@ -153,7 +163,10 @@ fun EditTaskContent(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text("Секретная задача", style = MaterialTheme.typography.bodyMedium)
-            Switch(checked = isSecret, onCheckedChange = { isSecret = it })
+            Switch(checked = isSecret, onCheckedChange = {
+                isSecret = it
+                assignedTo = if (it) myDeviceId else null
+            })
         }
         Spacer(modifier = Modifier.height(8.dp))
         Button(

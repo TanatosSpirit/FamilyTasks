@@ -123,17 +123,27 @@ fun CreateTaskScreen(
             if (devices.isNotEmpty()) {
                 Text("Назначить", style = MaterialTheme.typography.titleSmall)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(
-                        selected = assignedTo == null,
-                        onClick = { assignedTo = null },
-                        label = { Text("Никому") }
-                    )
-                    devices.forEach { d ->
+                    if (isSecret) {
+                        devices.find { it.deviceId == vm.myDeviceId }?.let { me ->
+                            FilterChip(
+                                selected = true,
+                                onClick = {},
+                                label = { Text(me.displayName.ifBlank { me.deviceId.take(4) }) }
+                            )
+                        }
+                    } else {
                         FilterChip(
-                            selected = assignedTo == d.deviceId,
-                            onClick = { assignedTo = d.deviceId },
-                            label = { Text(d.displayName.ifBlank { d.deviceId.take(4) }) }
+                            selected = assignedTo == null,
+                            onClick = { assignedTo = null },
+                            label = { Text("Никому") }
                         )
+                        devices.forEach { d ->
+                            FilterChip(
+                                selected = assignedTo == d.deviceId,
+                                onClick = { assignedTo = d.deviceId },
+                                label = { Text(d.displayName.ifBlank { d.deviceId.take(4) }) }
+                            )
+                        }
                     }
                 }
             }
@@ -157,7 +167,10 @@ fun CreateTaskScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text("Секретная задача", style = MaterialTheme.typography.bodyMedium)
-                Switch(checked = isSecret, onCheckedChange = { isSecret = it })
+                Switch(checked = isSecret, onCheckedChange = {
+                    isSecret = it
+                    assignedTo = if (it) vm.myDeviceId else null
+                })
             }
             Spacer(modifier = Modifier.height(8.dp))
             Button(

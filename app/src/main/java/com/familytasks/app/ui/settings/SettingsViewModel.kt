@@ -22,7 +22,8 @@ data class SettingsUiState(
     val notifyDueDate: Boolean = true,
     val notifyNewTask: Boolean = true,
     val notifyStatusChange: Boolean = true,
-    val lastSyncAt: Long = 0L
+    val lastSyncAt: Long = 0L,
+    val hideSecretTasks: Boolean = false
 )
 
 @HiltViewModel
@@ -56,7 +57,8 @@ class SettingsViewModel @Inject constructor(
                 notifyDueDate = prefs.notifyDueDate,
                 notifyNewTask = prefs.notifyNewTask,
                 notifyStatusChange = prefs.notifyStatusChange,
-                lastSyncAt = prefs.lastSyncAt
+                lastSyncAt = prefs.lastSyncAt,
+                hideSecretTasks = prefs.hideSecretTasks
             )
         }
     }
@@ -74,6 +76,11 @@ class SettingsViewModel @Inject constructor(
     fun setNotifyStatusChange(v: Boolean) {
         prefs.notifyStatusChange = v
         _state.update { it.copy(notifyStatusChange = v) }
+    }
+
+    fun setHideSecretTasks(v: Boolean) {
+        prefs.hideSecretTasks = v
+        _state.update { it.copy(hideSecretTasks = v) }
     }
 
     val deviceShortId: String get() = deviceIdManager.deviceId.take(8)

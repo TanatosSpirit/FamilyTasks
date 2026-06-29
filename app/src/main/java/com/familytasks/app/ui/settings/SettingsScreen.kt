@@ -163,6 +163,13 @@ fun SettingsScreen(
                 checked = state.notifyStatusChange,
                 onToggle = vm::setNotifyStatusChange
             )
+            HorizontalDivider()
+            Text("Конфиденциальность", style = MaterialTheme.typography.titleMedium)
+            SwitchRow(
+                label = "Скрыть секретные задачи",
+                checked = state.hideSecretTasks,
+                onToggle = vm::setHideSecretTasks
+            )
         }
     }
 }

@@ -3,6 +3,7 @@ package com.familytasks.app.core
 import android.content.Context
 import android.content.SharedPreferences
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.flow.MutableStateFlow
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -61,6 +62,15 @@ class PreferencesManager @Inject constructor(
         get() = prefs.getLong(KEY_LAST_CONFIRMED_SYNC_TS, 0L)
         set(value) = prefs.edit().putLong(KEY_LAST_CONFIRMED_SYNC_TS, value).apply()
 
+    val hideSecretTasksFlow = MutableStateFlow(prefs.getBoolean(KEY_HIDE_SECRET_TASKS, false))
+
+    var hideSecretTasks: Boolean
+        get() = prefs.getBoolean(KEY_HIDE_SECRET_TASKS, false)
+        set(value) {
+            prefs.edit().putBoolean(KEY_HIDE_SECRET_TASKS, value).apply()
+            hideSecretTasksFlow.value = value
+        }
+
     companion object {
         private const val KEY_DEVICE_ID = "device_id"
         private const val KEY_DISPLAY_NAME = "display_name"
@@ -74,5 +84,6 @@ class PreferencesManager @Inject constructor(
         private const val KEY_LAST_OWN_IP = "last_own_ip"
         private const val KEY_LAST_PEER_IP = "last_peer_ip"
         private const val KEY_LAST_CONFIRMED_SYNC_TS = "last_confirmed_sync_ts"
+        private const val KEY_HIDE_SECRET_TASKS = "hide_secret_tasks"
     }
 }
