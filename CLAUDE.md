@@ -286,6 +286,12 @@ Foreground Service **не выводит приложение из Doze** и н�
 
 При сортировке по приоритету/дате создания и в режиме «Готово» разделители не показываются. Реализовано через `sealed class TaskListItem { Header; Item }` и `buildDateGroupedList()` в `TaskListScreen.kt` — ViewModel не затронута. Подробнее: `docs/date-group-headers.md`.
 
+### Свайп для завершения задачи
+
+Карточки активных задач (`status == TODO`) свайпаются влево или вправо для перевода в `DONE`. Реализовано через `SwipeableTaskCard` в `TaskListScreen.kt`, который оборачивает `TaskCard` в `SwipeToDismissBox` (Material3). Завершение — `TaskListViewModel.completeTask()`.
+
+Два эффекта при свайпе: зелёный фон нарастает линейно (`alpha = 0.20 + fraction * 1.4`, max 0.90), при пересечении порога 50% — мгновенный скачок до 1.0 + тактильный отклик (`HapticFeedbackConstants.CLOCK_TICK`). Подробнее: `docs/swipe-to-complete.md`.
+
 ### Цвет дедлайна в списке задач
 
 Функция `dueDateColor` в `TaskListScreen.kt` принимает `dueDate`, `status` и `completedAt`.
