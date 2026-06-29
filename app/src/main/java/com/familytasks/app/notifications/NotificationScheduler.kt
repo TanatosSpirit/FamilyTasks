@@ -46,6 +46,7 @@ class NotificationScheduler @Inject constructor(
             return
         }
         val now = System.currentTimeMillis()
+        val displayTitle = if (task.isSecret) "Задача" else task.title
 
         val oneDayBefore = dueDate - TimeUnit.DAYS.toMillis(1)
         val oneHourBefore = dueDate - TimeUnit.HOURS.toMillis(1)
@@ -54,7 +55,7 @@ class NotificationScheduler @Inject constructor(
             scheduleNotificationWorker(
                 task.id + "_day",
                 task.id,
-                task.title,
+                displayTitle,
                 "Осталось 1 день",
                 oneDayBefore - now
             )
@@ -66,7 +67,7 @@ class NotificationScheduler @Inject constructor(
             scheduleNotificationWorker(
                 task.id + "_hour",
                 task.id,
-                task.title,
+                displayTitle,
                 "Осталось 1 час",
                 oneHourBefore - now
             )
