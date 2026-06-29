@@ -18,6 +18,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
@@ -33,10 +34,16 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberSwipeToDismissBoxState
+import android.view.HapticFeedbackConstants
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -44,11 +51,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlin.math.abs
 import com.familytasks.app.data.sync.SyncState
 import com.familytasks.app.domain.model.AssigneeFilter
 import com.familytasks.app.domain.model.Priority
@@ -152,11 +162,20 @@ fun TaskListScreen(
                     }) { item ->
                         when (item) {
                             is TaskListItem.Header -> DateGroupHeader(item.label)
-                            is TaskListItem.Item -> TaskCard(
-                                task = item.task,
-                                assigneeColor = item.task.assignedTo?.let { state.devices[it]?.color },
-                                onClick = { onTaskClick(item.task.id) }
-                            )
+                            is TaskListItem.Item -> if (item.task.status == TaskStatus.TODO) {
+                                SwipeableTaskCard(
+                                    task = item.task,
+                                    assigneeColor = item.task.assignedTo?.let { state.devices[it]?.color },
+                                    onClick = { onTaskClick(item.task.id) },
+                                    onComplete = { vm.completeTask(item.task) }
+                                )
+                            } else {
+                                TaskCard(
+                                    task = item.task,
+                                    assigneeColor = item.task.assignedTo?.let { state.devices[it]?.color },
+                                    onClick = { onTaskClick(item.task.id) }
+                                )
+                            }
                         }
                     }
                 }
@@ -269,6 +288,75 @@ private fun FilterRow(
             },
             label = { Text("Готово") }
         )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SwipeableTaskCard(
+    task: Task,
+    assigneeColor: Int?,
+    onClick: () -> Unit,
+    onComplete: () -> Unit
+) {
+    val view = LocalView.current
+    var cardWidth by remember { mutableIntStateOf(0) }
+    var prevPastThreshold by remember { mutableStateOf(false) }
+
+    val dismissState = rememberSwipeToDismissBoxState(
+        confirmValueChange = { value ->
+            if (value != SwipeToDismissBoxValue.Settled) {
+                onComplete()
+                true
+            } else false
+        }
+    )
+
+    val pastThreshold = dismissState.targetValue != SwipeToDismissBoxValue.Settled
+
+    // Haptic at the moment threshold is first crossed
+    LaunchedEffect(pastThreshold) {
+        if (pastThreshold && !prevPastThreshold) {
+            view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+        }
+        prevPastThreshold = pastThreshold
+    }
+
+    // Raw offset → alpha: builds 0..0.8 up to threshold, snaps to 0 at crossing
+    val rawOffset = runCatching { abs(dismissState.requireOffset()) }.getOrDefault(0f)
+    val bgAlpha = if (pastThreshold) {
+        1f
+    } else if (cardWidth > 0) {
+        val fraction = rawOffset / cardWidth
+        (0.20f + fraction * 1.4f).coerceIn(0f, 0.9f)
+    } else {
+        0f
+    }
+
+    SwipeToDismissBox(
+        state = dismissState,
+        modifier = Modifier.onSizeChanged { cardWidth = it.width },
+        backgroundContent = {
+            val alignment = if (dismissState.targetValue == SwipeToDismissBoxValue.EndToStart)
+                Alignment.CenterEnd else Alignment.CenterStart
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 12.dp, vertical = 4.dp)
+                    .clip(MaterialTheme.shapes.medium)
+                    .background(Color(0xFF4CAF50).copy(alpha = bgAlpha)),
+                contentAlignment = alignment
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Check,
+                    contentDescription = "Выполнено",
+                    tint = Color.White.copy(alpha = (bgAlpha / 0.8f).coerceIn(0f, 1f)),
+                    modifier = Modifier.padding(horizontal = 20.dp)
+                )
+            }
+        }
+    ) {
+        TaskCard(task = task, assigneeColor = assigneeColor, onClick = onClick)
     }
 }
 

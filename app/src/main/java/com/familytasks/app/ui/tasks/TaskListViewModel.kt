@@ -6,9 +6,12 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.familytasks.app.core.AppLogger
 import com.familytasks.app.core.DeviceIdManager
 import com.familytasks.app.core.PreferencesManager
 import com.familytasks.app.data.sync.SyncManager
+import com.familytasks.app.notifications.NotificationScheduler
+import kotlinx.coroutines.launch
 import com.familytasks.app.data.sync.SyncState
 import com.familytasks.app.domain.model.AssigneeFilter
 import com.familytasks.app.domain.model.Device
@@ -62,7 +65,8 @@ class TaskListViewModel @Inject constructor(
     private val deviceRepository: DeviceRepository,
     private val syncManager: SyncManager,
     val deviceIdManager: DeviceIdManager,
-    val prefs: PreferencesManager
+    val prefs: PreferencesManager,
+    private val notificationScheduler: NotificationScheduler
 ) : ViewModel() {
 
     private val _assigneeFilter = MutableStateFlow(AssigneeFilter.ALL)
@@ -165,4 +169,16 @@ class TaskListViewModel @Inject constructor(
     fun setAssigneeFilter(f: AssigneeFilter) { _assigneeFilter.value = f }
     fun setStatusFilter(f: StatusFilter) { _statusFilter.value = f }
     fun setSortOrder(s: SortOrder) { _sortOrder.value = s }
+
+    fun completeTask(task: Task) {
+        if (task.status == TaskStatus.DONE) return
+        viewModelScope.launch {
+            val now = System.currentTimeMillis()
+            val updated = task.copy(status = TaskStatus.DONE, updatedAt = now, completedAt = now)
+            taskRepository.upsertTask(updated)
+            notificationScheduler.cancelDueNotifications(task.id)
+            notificationScheduler.cancelRecurrenceSpawn(task.id)
+            AppLogger.d("TaskListViewModel", "completeTask: '${task.title}' marked done via swipe")
+        }
+    }
 }
