@@ -43,6 +43,20 @@ android {
     buildFeatures {
         compose = true
     }
+
+    packaging {
+        resources {
+            excludes += setOf(
+                // OkHttp cookie-domain list — not needed for local IP-only HTTP
+                "okhttp3/internal/publicsuffix/publicsuffixes.gz",
+                "okhttp3/internal/publicsuffix/NOTICE",
+                // Coroutines debug probe — release artefact, not needed in production
+                "DebugProbesKt.bin",
+                // Licence files bundled by dependencies
+                "META-INF/NOTICE.md",
+            )
+        }
+    }
 }
 
 dependencies {
