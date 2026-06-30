@@ -15,28 +15,69 @@
 ## Как вычисляется isPendingSync
 
 ```kotlin
+val syncThreshold = if (task.createdBy == state.myDeviceId) {
+    state.lastConfirmedSyncTimestamp
+} else {
+    maxOf(state.lastConfirmedSyncTimestamp, state.lastPartnerFileTimestamp)
+}
 val isPendingSync = !task.isSecret &&
     state.hasPairedDevice &&
-    task.updatedAt > state.lastConfirmedSyncTimestamp
+    task.updatedAt > syncThreshold
 ```
 
-- `task.updatedAt > lastConfirmedSyncTimestamp` — задача изменена после последнего подтверждённого round-trip
+Порог зависит от того, кто создал задачу:
+
+- **Моя задача** (`createdBy == myDeviceId`) — порог `lastConfirmedSyncTimestamp`. Индикатор гаснет когда партнёр подтвердил получение (WiFi round-trip или файловый обмен).
+- **Задача партнёра** (`createdBy == pairedDeviceId`) — порог `max(lastConfirmedSyncTimestamp, lastPartnerFileTimestamp)`. Партнёр заведомо знает свою задачу; индикатор не нужен пока задача не была изменена мной после последнего импорта.
+
+Дополнительные условия:
 - `!task.isSecret` — секретные задачи никогда не синкаются, замок уже говорит о них всё
 - `hasPairedDevice` — без сопряжённого устройства индикатор бессмысленен
 
-`lastConfirmedSyncTimestamp` — watermark из `PreferencesManager`, продвигается в `SyncService.triggerSync()` после успешного ответа партнёра. Подробнее о watermark: `docs/delta-sync.md`.
+## Два watermark-а
+
+| Поле | Где пишется | Семантика |
+|---|---|---|
+| `lastConfirmedSyncTimestamp` | `SyncService.triggerSync()` после WiFi round-trip; `ExportImportManager.importFromUri()` когда в файле найдены свои задачи | Партнёр подтвердил получение моих задач до этого момента |
+| `lastPartnerFileTimestamp` | `ExportImportManager.importFromUri()` | max `updatedAt` задач партнёра в последнем импортированном файле |
+
+Подробнее о `lastConfirmedSyncTimestamp`: `docs/delta-sync.md`.
+
+## Файловый обмен и индикатор
+
+Файловый импорт обновляет оба watermark-а:
+
+```kotlin
+// свои задачи в файле партнёра → партнёр их знает
+val maxOwnUpdatedAt = remoteTasks.filter { it.createdBy == myDeviceId }.maxOfOrNull { it.updatedAt }
+if (maxOwnUpdatedAt > lastConfirmedSyncTimestamp) lastConfirmedSyncTimestamp = maxOwnUpdatedAt
+
+// задачи партнёра в его файле → я их только что получил, индикатор не нужен
+val maxPartnerUpdatedAt = remoteTasks.filter { it.createdBy == pairedId }.maxOfOrNull { it.updatedAt }
+if (maxPartnerUpdatedAt > lastPartnerFileTimestamp) lastPartnerFileTimestamp = maxPartnerUpdatedAt
+```
+
+### Сколько раундов нужно для гашения индикаторов
+
+| Сценарий | Раундов |
+|---|---|
+| Задачи только у одной стороны | 2 (A→B, B→A) |
+| Задачи у обоих | 3 (A→B, B→A, A→B) |
+
+Раунды могут быть растянуты во времени — каждый следующий файл постепенно продвигает watermark вперёд, потерь данных нет. WiFi-синк при встрече закрывает всё накопившееся за один раунд.
 
 ## Реактивность
 
-`PreferencesManager.lastConfirmedSyncTimestamp` при записи обновляет `lastConfirmedSyncTimestampFlow: MutableStateFlow<Long>`. `TaskListViewModel` подписан на этот flow через `syncStatus` combine — как только sync завершается, ViewModel эмитит новый `TaskListUiState` и карточки гаснут автоматически без перезагрузки экрана.
+Оба `MutableStateFlow` в `PreferencesManager` обновляются при записи. `TaskListViewModel` подписан на них через промежуточный `syncTimestamps` combine → `syncStatus` combine — карточки гаснут автоматически без перезагрузки экрана.
 
 ## Затронутые файлы
 
 | Файл | Изменение |
 |---|---|
-| `PreferencesManager.kt` | добавлен `lastConfirmedSyncTimestampFlow` |
-| `TaskListViewModel.kt` | `SyncStatus` расширен watermark-ом (5-й поток в combine); `TaskListUiState` получил `lastConfirmedSyncTimestamp` и `hasPairedDevice` |
-| `TaskListScreen.kt` | `TaskCard` и `SwipeableTaskCard` получили параметр `isPendingSync`; применяется `Modifier.alpha(0.65f)` и `Icons.Default.Sync` (14dp, серый) |
+| `PreferencesManager.kt` | добавлены `lastConfirmedSyncTimestampFlow`, `lastPartnerFileTimestampFlow` |
+| `ExportImportManager.kt` | при импорте обновляет оба watermark-а |
+| `TaskListViewModel.kt` | `syncTimestamps` промежуточный flow; `SyncStatus` и `TaskListUiState` получили `lastPartnerFileTimestamp` и `myDeviceId` |
+| `TaskListScreen.kt` | `isPendingSync` вычисляется через `syncThreshold` с учётом `createdBy`; `TaskCard` и `SwipeableTaskCard` получили параметр `isPendingSync` |
 
 ## Побочное изменение: формула bgAlpha свайпа
 

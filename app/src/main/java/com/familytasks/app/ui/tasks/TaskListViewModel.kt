@@ -44,6 +44,8 @@ data class TaskListUiState(
     val myName: String = "",
     val peerName: String? = null,
     val lastConfirmedSyncTimestamp: Long = 0L,
+    val lastPartnerFileTimestamp: Long = 0L,
+    val myDeviceId: String = "",
     val hasPairedDevice: Boolean = false
 )
 
@@ -59,7 +61,8 @@ private data class SyncStatus(
     val lastSyncAt: Long,
     val peerIp: String?,
     val wifiConnected: Boolean,
-    val lastConfirmedSyncTimestamp: Long
+    val lastConfirmedSyncTimestamp: Long,
+    val lastPartnerFileTimestamp: Long
 )
 
 @HiltViewModel
@@ -108,14 +111,19 @@ class TaskListViewModel @Inject constructor(
         Filters(a, s, o, h)
     }
 
+    private val syncTimestamps = combine(
+        prefs.lastConfirmedSyncTimestampFlow,
+        prefs.lastPartnerFileTimestampFlow
+    ) { confirmed, partner -> confirmed to partner }
+
     private val syncStatus = combine(
         syncManager.syncState,
         syncManager.lastSyncAt,
         syncManager.peerIp,
         _wifiConnected,
-        prefs.lastConfirmedSyncTimestampFlow
-    ) { st, ts, ip, wifi, watermark ->
-        SyncStatus(st, ts, ip, wifi, watermark)
+        syncTimestamps
+    ) { st, ts, ip, wifi, (watermark, partnerTs) ->
+        SyncStatus(st, ts, ip, wifi, watermark, partnerTs)
     }
 
     val uiState: StateFlow<TaskListUiState> = combine(
@@ -170,6 +178,8 @@ class TaskListViewModel @Inject constructor(
             myName = prefs.displayName,
             peerName = prefs.pairedDeviceId?.let { deviceMap[it]?.displayName },
             lastConfirmedSyncTimestamp = sync.lastConfirmedSyncTimestamp,
+            lastPartnerFileTimestamp = sync.lastPartnerFileTimestamp,
+            myDeviceId = deviceIdManager.deviceId ?: "",
             hasPairedDevice = prefs.pairedDeviceId != null
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), TaskListUiState())
