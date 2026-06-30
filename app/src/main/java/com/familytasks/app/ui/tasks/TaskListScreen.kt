@@ -44,10 +44,12 @@ import android.view.HapticFeedbackConstants
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -303,15 +305,28 @@ private fun SwipeableTaskCard(
     val view = LocalView.current
     var cardWidth by remember { mutableIntStateOf(0) }
     var prevPastThreshold by remember { mutableStateOf(false) }
+    var dragOffset by remember { mutableFloatStateOf(0f) }
 
     val dismissState = rememberSwipeToDismissBoxState(
+        positionalThreshold = { it * 0.50f },
         confirmValueChange = { value ->
             if (value != SwipeToDismissBoxValue.Settled) {
-                onComplete()
-                true
+                // Block velocity-triggered dismissal if drag offset is too small
+                val fraction = if (cardWidth > 0) dragOffset / cardWidth else 0f
+                if (fraction >= 0.3f) {
+                    onComplete()
+                    true
+                } else {
+                    false
+                }
             } else false
         }
     )
+
+    LaunchedEffect(dismissState) {
+        snapshotFlow { runCatching { abs(dismissState.requireOffset()) }.getOrDefault(0f) }
+            .collect { dragOffset = it }
+    }
 
     val pastThreshold = dismissState.targetValue != SwipeToDismissBoxValue.Settled
 
