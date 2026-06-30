@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
+import com.familytasks.app.PortraitCaptureActivity
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -73,6 +74,7 @@ fun QrCodeScreen(
                             setDesiredBarcodeFormats(ScanOptions.QR_CODE)
                             setPrompt("Сканируйте QR-код второго устройства")
                             setBeepEnabled(false)
+                            setCaptureActivity(PortraitCaptureActivity::class.java)
                         }
                         scanLauncher.launch(opts)
                     },
