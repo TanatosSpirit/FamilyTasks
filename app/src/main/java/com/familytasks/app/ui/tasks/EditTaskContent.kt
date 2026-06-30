@@ -11,7 +11,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -27,6 +30,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.familytasks.app.domain.model.Device
 import com.familytasks.app.domain.model.Priority
@@ -56,6 +62,7 @@ fun EditTaskContent(
     var dueDate by remember { mutableLongStateOf(task.dueDate ?: 0L) }
     var recurrence by remember { mutableStateOf(task.recurrence) }
     var isSecret by remember { mutableStateOf(task.isSecret) }
+    var showUnSecretDialog by remember { mutableStateOf(false) }
 
     fun pickDateTime() {
         val cal = Calendar.getInstance()
@@ -83,7 +90,11 @@ fun EditTaskContent(
             onValueChange = { title = it },
             label = { Text("Название") },
             modifier = Modifier.fillMaxWidth(),
-            singleLine = true
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(
+                capitalization = KeyboardCapitalization.Sentences,
+                imeAction = ImeAction.Next
+            )
         )
         OutlinedTextField(
             value = description,
@@ -163,9 +174,13 @@ fun EditTaskContent(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text("Секретная задача", style = MaterialTheme.typography.bodyMedium)
-            Switch(checked = isSecret, onCheckedChange = {
-                isSecret = it
-                assignedTo = if (it) myDeviceId else null
+            Switch(checked = isSecret, onCheckedChange = { newValue ->
+                if (!newValue && isSecret) {
+                    showUnSecretDialog = true
+                } else {
+                    isSecret = newValue
+                    assignedTo = if (newValue) myDeviceId else null
+                }
             })
         }
         Spacer(modifier = Modifier.height(8.dp))
@@ -195,5 +210,27 @@ fun EditTaskContent(
         OutlinedButton(onClick = onCancel, modifier = Modifier.fillMaxWidth()) {
             Text("Отмена")
         }
+    }
+
+    if (showUnSecretDialog) {
+        AlertDialog(
+            onDismissRequest = { showUnSecretDialog = false },
+            title = { Text("Сделать задачу обычной?") },
+            text = { Text("Задача станет видна партнёру при следующей синхронизации.") },
+            confirmButton = {
+                Button(onClick = { showUnSecretDialog = false }) { Text("Нет") }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = {
+                        isSecret = false
+                        assignedTo = null
+                        showUnSecretDialog = false
+                    },
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) { Text("Да") }
+            }
+        )
     }
 }
