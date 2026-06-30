@@ -1,6 +1,6 @@
 -keep class fi.iki.elonen.** { *; }
--keep class com.google.zxing.** { *; }
 -keep class com.journeyapps.** { *; }
+# com.google.zxing: let R8 tree-shake; only QR writer is used directly
 -keepattributes *Annotation*, InnerClasses
 -dontnote kotlinx.serialization.AnnotationsKt
 
