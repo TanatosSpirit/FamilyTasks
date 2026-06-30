@@ -58,9 +58,14 @@ class PreferencesManager @Inject constructor(
         get() = prefs.getString(KEY_LAST_PEER_IP, null)
         set(value) = prefs.edit().putString(KEY_LAST_PEER_IP, value).apply()
 
+    val lastConfirmedSyncTimestampFlow = MutableStateFlow(prefs.getLong(KEY_LAST_CONFIRMED_SYNC_TS, 0L))
+
     var lastConfirmedSyncTimestamp: Long
         get() = prefs.getLong(KEY_LAST_CONFIRMED_SYNC_TS, 0L)
-        set(value) = prefs.edit().putLong(KEY_LAST_CONFIRMED_SYNC_TS, value).apply()
+        set(value) {
+            prefs.edit().putLong(KEY_LAST_CONFIRMED_SYNC_TS, value).apply()
+            lastConfirmedSyncTimestampFlow.value = value
+        }
 
     val hideSecretTasksFlow = MutableStateFlow(prefs.getBoolean(KEY_HIDE_SECRET_TASKS, false))
 

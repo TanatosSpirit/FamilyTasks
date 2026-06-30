@@ -24,6 +24,8 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sort
+import androidx.compose.material.icons.filled.Sync
+import androidx.compose.ui.draw.alpha
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
@@ -165,19 +167,26 @@ fun TaskListScreen(
                     }) { item ->
                         when (item) {
                             is TaskListItem.Header -> DateGroupHeader(item.label)
-                            is TaskListItem.Item -> if (item.task.status == TaskStatus.TODO) {
-                                SwipeableTaskCard(
-                                    task = item.task,
-                                    assigneeColor = item.task.assignedTo?.let { state.devices[it]?.color },
-                                    onClick = { onTaskClick(item.task.id) },
-                                    onComplete = { vm.completeTask(item.task) }
-                                )
-                            } else {
-                                TaskCard(
-                                    task = item.task,
-                                    assigneeColor = item.task.assignedTo?.let { state.devices[it]?.color },
-                                    onClick = { onTaskClick(item.task.id) }
-                                )
+                            is TaskListItem.Item -> {
+                                val isPendingSync = !item.task.isSecret &&
+                                    state.hasPairedDevice &&
+                                    item.task.updatedAt > state.lastConfirmedSyncTimestamp
+                                if (item.task.status == TaskStatus.TODO) {
+                                    SwipeableTaskCard(
+                                        task = item.task,
+                                        assigneeColor = item.task.assignedTo?.let { state.devices[it]?.color },
+                                        isPendingSync = isPendingSync,
+                                        onClick = { onTaskClick(item.task.id) },
+                                        onComplete = { vm.completeTask(item.task) }
+                                    )
+                                } else {
+                                    TaskCard(
+                                        task = item.task,
+                                        assigneeColor = item.task.assignedTo?.let { state.devices[it]?.color },
+                                        isPendingSync = isPendingSync,
+                                        onClick = { onTaskClick(item.task.id) }
+                                    )
+                                }
                             }
                         }
                     }
@@ -299,6 +308,7 @@ private fun FilterRow(
 private fun SwipeableTaskCard(
     task: Task,
     assigneeColor: Int?,
+    isPendingSync: Boolean,
     onClick: () -> Unit,
     onComplete: () -> Unit
 ) {
@@ -338,13 +348,13 @@ private fun SwipeableTaskCard(
         prevPastThreshold = pastThreshold
     }
 
-    // Raw offset → alpha: builds 0..0.8 up to threshold, snaps to 0 at crossing
+    // Raw offset → alpha: builds 0..0.9 up to threshold, snaps to 1.0 at crossing
     val rawOffset = runCatching { abs(dismissState.requireOffset()) }.getOrDefault(0f)
     val bgAlpha = if (pastThreshold) {
         1f
     } else if (cardWidth > 0) {
         val fraction = rawOffset / cardWidth
-        (0.20f + fraction * 1.4f).coerceIn(0f, 0.9f)
+        (fraction * 1.8f).coerceIn(0f, 0.9f)
     } else {
         0f
     }
@@ -372,7 +382,7 @@ private fun SwipeableTaskCard(
             }
         }
     ) {
-        TaskCard(task = task, assigneeColor = assigneeColor, onClick = onClick)
+        TaskCard(task = task, assigneeColor = assigneeColor, isPendingSync = isPendingSync, onClick = onClick)
     }
 }
 
@@ -380,13 +390,15 @@ private fun SwipeableTaskCard(
 private fun TaskCard(
     task: Task,
     assigneeColor: Int?,
+    isPendingSync: Boolean,
     onClick: () -> Unit
 ) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 4.dp)
-            .clickable(onClick = onClick),
+            .clickable(onClick = onClick)
+            .alpha(if (isPendingSync) 0.65f else 1f),
         colors = CardDefaults.cardColors(
             containerColor = priorityContainerColor(task.priority)
         )
@@ -395,6 +407,15 @@ private fun TaskCard(
             modifier = Modifier.padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            if (isPendingSync) {
+                Icon(
+                    imageVector = Icons.Default.Sync,
+                    contentDescription = "Ждёт синхронизации",
+                    modifier = Modifier.size(14.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+            }
 
             Column(modifier = Modifier.weight(1f)) {
                 Text(

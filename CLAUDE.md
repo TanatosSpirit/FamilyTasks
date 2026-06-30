@@ -290,7 +290,15 @@ Foreground Service **не выводит приложение из Doze** и н�
 
 Карточки активных задач (`status == TODO`) свайпаются влево или вправо для перевода в `DONE`. Реализовано через `SwipeableTaskCard` в `TaskListScreen.kt`, который оборачивает `TaskCard` в `SwipeToDismissBox` (Material3). Завершение — `TaskListViewModel.completeTask()`.
 
-Два эффекта при свайпе: зелёный фон нарастает линейно (`alpha = 0.20 + fraction * 1.4`, max 0.90), при пересечении порога 50% — мгновенный скачок до 1.0 + тактильный отклик (`HapticFeedbackConstants.CLOCK_TICK`). Подробнее: `docs/swipe-to-complete.md`.
+Два эффекта при свайпе: зелёный фон нарастает линейно (`alpha = fraction * 1.8`, max 0.90), при пересечении порога 50% — мгновенный скачок до 1.0 + тактильный отклик (`HapticFeedbackConstants.CLOCK_TICK`). Формула начинает с 0 (не с 0.20) — иначе фон просвечивает сквозь полупрозрачные карточки (pending-sync). Подробнее: `docs/swipe-to-complete.md`.
+
+### Индикатор ожидания синхронизации (pending-sync)
+
+Карточка задачи, которую партнёр ещё не получил, отображается приглушённой (`alpha = 0.65`) и со значком `Icons.Default.Sync` (14dp, серый) слева от названия. Семантика: задача **неактивна у партнёра** — существует только на этом устройстве.
+
+Флаг вычисляется в `TaskListScreen.kt`: `!task.isSecret && state.hasPairedDevice && task.updatedAt > state.lastConfirmedSyncTimestamp`. Секретные задачи исключены — они не синкаются по определению, замок уже говорит о них всё. Без сопряжённого устройства индикатор не показывается.
+
+`lastConfirmedSyncTimestamp` в `PreferencesManager` при записи обновляет `lastConfirmedSyncTimestampFlow` — ViewModel реагирует мгновенно и убирает индикатор сразу после успешного sync. Подробнее: `docs/pending-sync-indicator.md`.
 
 ### Цвет дедлайна в списке задач
 
