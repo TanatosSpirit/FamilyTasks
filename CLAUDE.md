@@ -302,6 +302,8 @@ Foreground Service **не выводит приложение из Doze** и н�
 
 Раньше использовался скалярный watermark (`max(updatedAt)` по подмножеству задач в последнем sync/файле) — он давал **max-overshoot**: партнёр поднимал `updatedAt` одной моей задачи, watermark перепрыгивал через другую, реально недоставленную. Баг был чисто косметическим (WiFi-дельта и файловый экспорт не зависят от индикаторного watermark-а), но воспроизводимым — разбор в `proposal/pending-sync-indicator-strategy.md`. `lastConfirmedSyncTimestamp` в `PreferencesManager` остался, но только как боевой delta-sync watermark (`docs/delta-sync.md`) — индикатор от него больше не зависит. Подробнее: `docs/pending-sync-indicator.md`.
 
+`updatedAt`/`confirmedUpdatedAt` — эпоха UTC (`System.currentTimeMillis()`), от часового пояса устройства не зависит; разные таймзоны партнёров (актуально для файлового sync) сравнение не ломают. Ломает только рассинхронизация самих системных часов — отдельный, не рассматриваемый риск.
+
 ### Цвет дедлайна в списке задач
 
 Функция `dueDateColor` в `TaskListScreen.kt` принимает `dueDate`, `status` и `completedAt`.
