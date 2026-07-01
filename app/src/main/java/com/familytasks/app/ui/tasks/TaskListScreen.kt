@@ -173,7 +173,8 @@ fun TaskListScreen(
                                 } else {
                                     maxOf(state.lastConfirmedSyncTimestamp, state.lastPartnerFileTimestamp)
                                 }
-                                val isPendingSync = !item.task.isSecret &&
+                                val isPendingSync = state.showPendingSyncIndicator &&
+                                    !item.task.isSecret &&
                                     state.hasPairedDevice &&
                                     item.task.updatedAt > syncThreshold
                                 if (item.task.status == TaskStatus.TODO) {

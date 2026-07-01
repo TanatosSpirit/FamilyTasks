@@ -170,6 +170,13 @@ fun SettingsScreen(
                 checked = state.hideSecretTasks,
                 onToggle = vm::setHideSecretTasks
             )
+            HorizontalDivider()
+            Text("Экспериментальные фичи", style = MaterialTheme.typography.titleMedium)
+            SwitchRow(
+                label = "Отображать индикатор синхронизации задач",
+                checked = state.showPendingSyncIndicator,
+                onToggle = vm::setShowPendingSyncIndicator
+            )
         }
     }
 }

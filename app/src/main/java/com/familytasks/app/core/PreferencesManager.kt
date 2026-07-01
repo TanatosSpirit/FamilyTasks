@@ -94,6 +94,15 @@ class PreferencesManager @Inject constructor(
             hideSecretTasksFlow.value = value
         }
 
+    val showPendingSyncIndicatorFlow = MutableStateFlow(prefs.getBoolean(KEY_SHOW_PENDING_SYNC_INDICATOR, false))
+
+    var showPendingSyncIndicator: Boolean
+        get() = prefs.getBoolean(KEY_SHOW_PENDING_SYNC_INDICATOR, false)
+        set(value) {
+            prefs.edit().putBoolean(KEY_SHOW_PENDING_SYNC_INDICATOR, value).apply()
+            showPendingSyncIndicatorFlow.value = value
+        }
+
     companion object {
         private const val KEY_DEVICE_ID = "device_id"
         private const val KEY_DISPLAY_NAME = "display_name"
@@ -110,5 +119,6 @@ class PreferencesManager @Inject constructor(
         private const val KEY_LAST_PARTNER_FILE_TS = "last_partner_file_ts"
         private const val KEY_LAST_OWN_FILE_CONFIRMED_TS = "last_own_file_confirmed_ts"
         private const val KEY_HIDE_SECRET_TASKS = "hide_secret_tasks"
+        private const val KEY_SHOW_PENDING_SYNC_INDICATOR = "show_pending_sync_indicator"
     }
 }

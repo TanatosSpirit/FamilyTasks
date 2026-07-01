@@ -47,7 +47,8 @@ data class TaskListUiState(
     val lastPartnerFileTimestamp: Long = 0L,
     val lastOwnFileConfirmedTimestamp: Long = 0L,
     val myDeviceId: String = "",
-    val hasPairedDevice: Boolean = false
+    val hasPairedDevice: Boolean = false,
+    val showPendingSyncIndicator: Boolean = false
 )
 
 private data class Filters(
@@ -133,8 +134,9 @@ class TaskListViewModel @Inject constructor(
         taskRepository.observeAllTasks(),
         deviceRepository.observeDevices(),
         filters,
-        syncStatus
-    ) { rawTasks, deviceList, f, sync ->
+        syncStatus,
+        prefs.showPendingSyncIndicatorFlow
+    ) { rawTasks, deviceList, f, sync, showPendingSyncIndicator ->
         val deviceMap = deviceList.associateBy { it.deviceId }
         val filtered = rawTasks
             .filter { !it.deleted }
@@ -184,7 +186,8 @@ class TaskListViewModel @Inject constructor(
             lastPartnerFileTimestamp = sync.lastPartnerFileTimestamp,
             lastOwnFileConfirmedTimestamp = sync.lastOwnFileConfirmedTimestamp,
             myDeviceId = deviceIdManager.deviceId ?: "",
-            hasPairedDevice = prefs.pairedDeviceId != null
+            hasPairedDevice = prefs.pairedDeviceId != null,
+            showPendingSyncIndicator = showPendingSyncIndicator
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), TaskListUiState())
 
