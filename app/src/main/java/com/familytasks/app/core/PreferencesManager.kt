@@ -85,6 +85,15 @@ class PreferencesManager @Inject constructor(
             showPendingSyncIndicatorFlow.value = value
         }
 
+    val webUiEnabledFlow = MutableStateFlow(prefs.getBoolean(KEY_WEB_UI_ENABLED, false))
+
+    var webUiEnabled: Boolean
+        get() = prefs.getBoolean(KEY_WEB_UI_ENABLED, false)
+        set(value) {
+            prefs.edit().putBoolean(KEY_WEB_UI_ENABLED, value).apply()
+            webUiEnabledFlow.value = value
+        }
+
     companion object {
         private const val KEY_DEVICE_ID = "device_id"
         private const val KEY_DISPLAY_NAME = "display_name"
@@ -100,5 +109,6 @@ class PreferencesManager @Inject constructor(
         private const val KEY_LAST_CONFIRMED_SYNC_TS = "last_confirmed_sync_ts"
         private const val KEY_HIDE_SECRET_TASKS = "hide_secret_tasks"
         private const val KEY_SHOW_PENDING_SYNC_INDICATOR = "show_pending_sync_indicator"
+        private const val KEY_WEB_UI_ENABLED = "web_ui_enabled"
     }
 }

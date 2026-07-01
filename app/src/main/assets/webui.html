@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FamilyTasks</title>
+<style>
+  body { font-family: sans-serif; max-width: 640px; margin: 20px auto; padding: 0 12px; background: #fafafa; color: #222; }
+  h1 { font-size: 20px; }
+  .warn { background: #fff3cd; border: 1px solid #ffe08a; padding: 8px 12px; border-radius: 6px; font-size: 13px; margin-bottom: 16px; }
+  .task { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .task.done { opacity: 0.55; }
+  .task-title { font-weight: 600; }
+  .task-meta { font-size: 12px; color: #666; margin-top: 2px; }
+  button { cursor: pointer; border: none; border-radius: 6px; padding: 6px 10px; font-size: 13px; }
+  .toggle-btn { background: #4CAF50; color: white; white-space: nowrap; }
+  .task.done .toggle-btn { background: #999; }
+  form { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 12px; margin-top: 20px; }
+  form label { display: block; font-size: 13px; margin-top: 8px; }
+  form input, form select, form textarea { width: 100%; box-sizing: border-box; padding: 6px; margin-top: 2px; font-size: 14px; }
+  form button { margin-top: 12px; background: #2196F3; color: white; width: 100%; padding: 10px; }
+  #status { font-size: 13px; margin-top: 8px; }
+</style>
+</head>
+<body>
+  <h1>FamilyTasks — веб (экспериментально)</h1>
+  <div class="warn">Без аутентификации. Работает пока на телефоне включён тумблер «Веб-интерфейс» в настройках.</div>
+
+  <div id="tasks"></div>
+
+  <form id="createForm">
+    <strong>Добавить задачу</strong>
+    <label>Название
+      <input type="text" id="title" required maxlength="200">
+    </label>
+    <label>Описание
+      <textarea id="description" rows="2"></textarea>
+    </label>
+    <label>Приоритет
+      <select id="priority">
+        <option value="low">Низкий</option>
+        <option value="normal" selected>Обычный</option>
+        <option value="high">Высокий</option>
+      </select>
+    </label>
+    <label>Срок
+      <input type="datetime-local" id="dueDate">
+    </label>
+    <label>Назначить
+      <select id="assignedTo"><option value="">Никому</option></select>
+    </label>
+    <button type="submit">Добавить</button>
+    <div id="status"></div>
+  </form>
+
+<script>
+var devicesById = {};
+
+function fmtDue(ms) {
+  if (!ms) return '';
+  var d = new Date(ms);
+  return ' · ' + d.toLocaleString();
+}
+
+function render(payload) {
+  devicesById = {};
+  payload.devices.forEach(function (d) { devicesById[d.deviceId] = d.displayName; });
+
+  var assignedSelect = document.getElementById('assignedTo');
+  var previousAssigned = assignedSelect.value;
+  assignedSelect.innerHTML = '<option value="">Никому</option>';
+  payload.devices.forEach(function (d) {
+    var opt = document.createElement('option');
+    opt.value = d.deviceId;
+    opt.textContent = d.displayName;
+    assignedSelect.appendChild(opt);
+  });
+  assignedSelect.value = previousAssigned;
+
+  var tasksDiv = document.getElementById('tasks');
+  tasksDiv.innerHTML = '';
+  var tasks = payload.tasks.slice().sort(function (a, b) {
+    if (a.status !== b.status) return a.status === 'done' ? 1 : -1;
+    if (a.status === 'done') return b.updatedAt - a.updatedAt;
+    var aDue = a.dueDate == null ? Infinity : a.dueDate;
+    var bDue = b.dueDate == null ? Infinity : b.dueDate;
+    return aDue - bDue;
+  });
+  tasks.forEach(function (t) {
+    var row = document.createElement('div');
+    row.className = 'task' + (t.status === 'done' ? ' done' : '');
+
+    var left = document.createElement('div');
+    var title = document.createElement('div');
+    title.className = 'task-title';
+    title.textContent = t.title;
+    var meta = document.createElement('div');
+    meta.className = 'task-meta';
+    var assignedName = t.assignedTo ? (devicesById[t.assignedTo] || '?') : 'никому';
+    meta.textContent = assignedName + fmtDue(t.dueDate);
+    left.appendChild(title);
+    left.appendChild(meta);
+
+    var btn = document.createElement('button');
+    btn.className = 'toggle-btn';
+    btn.textContent = t.status === 'done' ? 'Вернуть' : 'Готово';
+    btn.onclick = function () { toggleTask(t.id); };
+
+    row.appendChild(left);
+    row.appendChild(btn);
+    tasksDiv.appendChild(row);
+  });
+}
+
+function load() {
+  fetch('/api/tasks').then(function (r) { return r.json(); }).then(render);
+}
+
+function toggleTask(id) {
+  fetch('/api/tasks/' + encodeURIComponent(id) + '/toggle', { method: 'POST' }).then(load);
+}
+
+document.getElementById('createForm').addEventListener('submit', function (e) {
+  e.preventDefault();
+  var dueDateVal = document.getElementById('dueDate').value;
+  var body = {
+    title: document.getElementById('title').value,
+    description: document.getElementById('description').value || null,
+    priority: document.getElementById('priority').value,
+    dueDate: dueDateVal ? new Date(dueDateVal).getTime() : null,
+    assignedTo: document.getElementById('assignedTo').value || null
+  };
+  fetch('/api/tasks', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  }).then(function (r) {
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    document.getElementById('createForm').reset();
+    document.getElementById('status').textContent = 'Добавлено';
+    load();
+  }).catch(function (e) {
+    document.getElementById('status').textContent = 'Ошибка: ' + e.message;
+  });
+});
+
+load();
+setInterval(load, 5000);
+</script>
+</body>
+</html>

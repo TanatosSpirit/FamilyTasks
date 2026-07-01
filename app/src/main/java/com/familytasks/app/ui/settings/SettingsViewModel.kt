@@ -24,7 +24,9 @@ data class SettingsUiState(
     val notifyStatusChange: Boolean = true,
     val lastSyncAt: Long = 0L,
     val hideSecretTasks: Boolean = false,
-    val showPendingSyncIndicator: Boolean = false
+    val showPendingSyncIndicator: Boolean = false,
+    val webUiEnabled: Boolean = false,
+    val ownIp: String? = null
 )
 
 @HiltViewModel
@@ -60,7 +62,9 @@ class SettingsViewModel @Inject constructor(
                 notifyStatusChange = prefs.notifyStatusChange,
                 lastSyncAt = prefs.lastSyncAt,
                 hideSecretTasks = prefs.hideSecretTasks,
-                showPendingSyncIndicator = prefs.showPendingSyncIndicator
+                showPendingSyncIndicator = prefs.showPendingSyncIndicator,
+                webUiEnabled = prefs.webUiEnabled,
+                ownIp = prefs.lastKnownOwnIp
             )
         }
     }
@@ -88,6 +92,11 @@ class SettingsViewModel @Inject constructor(
     fun setShowPendingSyncIndicator(v: Boolean) {
         prefs.showPendingSyncIndicator = v
         _state.update { it.copy(showPendingSyncIndicator = v) }
+    }
+
+    fun setWebUiEnabled(v: Boolean) {
+        prefs.webUiEnabled = v
+        _state.update { it.copy(webUiEnabled = v, ownIp = prefs.lastKnownOwnIp) }
     }
 
     val deviceShortId: String get() = deviceIdManager.deviceId.take(8)

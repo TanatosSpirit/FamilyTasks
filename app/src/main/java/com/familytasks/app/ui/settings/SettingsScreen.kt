@@ -177,6 +177,23 @@ fun SettingsScreen(
                 checked = state.showPendingSyncIndicator,
                 onToggle = vm::setShowPendingSyncIndicator
             )
+            SwitchRow(
+                label = "Веб-интерфейс без аутентификации (только в надёжной сети!)",
+                checked = state.webUiEnabled,
+                onToggle = vm::setWebUiEnabled
+            )
+            if (state.webUiEnabled) {
+                Text(
+                    "Открой в браузере на компьютере: http://${state.ownIp ?: "?"}:8080/web",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    "Пока включено — любой в этой WiFi-сети сможет смотреть и менять задачи без пароля. Включай только когда уверен, что в сети нет посторонних.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
         }
     }
 }

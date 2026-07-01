@@ -27,6 +27,9 @@ import com.familytasks.app.core.AppLogger
 import com.familytasks.app.core.DeviceIdManager
 import com.familytasks.app.core.PreferencesManager
 import com.familytasks.app.domain.model.Device
+import com.familytasks.app.domain.model.Priority
+import com.familytasks.app.domain.model.Task
+import com.familytasks.app.domain.model.TaskStatus
 import com.familytasks.app.domain.repository.DeviceRepository
 import com.familytasks.app.domain.repository.TaskRepository
 import com.familytasks.app.domain.usecase.SyncUseCase
@@ -44,6 +47,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
+import java.util.UUID
 import javax.inject.Inject
 
 private const val HOUR_MS = 60 * 60 * 1000L
@@ -185,6 +189,12 @@ class SyncService : Service() {
     }
 
     private fun startHttpServer() {
+        val webUiHtml = try {
+            assets.open("webui.html").bufferedReader().use { it.readText() }
+        } catch (e: Exception) {
+            AppLogger.e(TAG, "Failed to load webui.html: ${e.message}", e)
+            ""
+        }
         httpServer = HttpServer(
             port = 8080,
             ownDeviceId = deviceIdManager.deviceId,
@@ -240,6 +250,58 @@ class SyncService : Service() {
                         verifyJob?.cancel()
                         scope.launch { triggerSync() }
                     }
+                }
+            },
+            isWebUiEnabled = { prefs.webUiEnabled },
+            webUiHtml = webUiHtml,
+            onWebListTasks = {
+                val tasks = taskRepository.getAllTasksSnapshot().filter { !it.isSecret && !it.deleted }
+                SyncPayload(
+                    deviceId = deviceIdManager.deviceId,
+                    tasks = tasks.map { it.toDto() },
+                    devices = buildDevicesPayload().map { it.toDto() }
+                )
+            },
+            onWebCreateTask = { req ->
+                val now = System.currentTimeMillis()
+                val task = Task(
+                    id = UUID.randomUUID().toString(),
+                    title = req.title,
+                    description = req.description,
+                    assignedTo = req.assignedTo,
+                    priority = Priority.fromString(req.priority),
+                    dueDate = req.dueDate,
+                    createdBy = deviceIdManager.deviceId,
+                    createdAt = now,
+                    updatedAt = now
+                )
+                taskRepository.upsertTask(task)
+                AppLogger.i(TAG, "Web UI: created task '${task.title}'")
+                if (task.assignedTo == deviceIdManager.deviceId) {
+                    notificationScheduler.scheduleDueNotifications(task)
+                }
+            },
+            onWebToggleTask = { id ->
+                taskRepository.getTaskById(id)?.let { task ->
+                    val now = System.currentTimeMillis()
+                    val next = if (task.status == TaskStatus.TODO) TaskStatus.DONE else TaskStatus.TODO
+                    val updated = task.copy(
+                        status = next,
+                        updatedAt = now,
+                        completedAt = if (next == TaskStatus.DONE) now else null
+                    )
+                    taskRepository.upsertTask(updated)
+                    val eligible = updated.assignedTo == deviceIdManager.deviceId &&
+                        updated.status != TaskStatus.DONE &&
+                        !updated.deleted
+                    if (eligible) {
+                        notificationScheduler.scheduleDueNotifications(updated)
+                        notificationScheduler.scheduleRecurrenceSpawn(updated)
+                    } else {
+                        notificationScheduler.cancelDueNotifications(updated.id)
+                        notificationScheduler.cancelRecurrenceSpawn(updated.id)
+                    }
+                    AppLogger.i(TAG, "Web UI: toggled '${updated.title}' -> ${updated.status}")
                 }
             }
         ).also {
