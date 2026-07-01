@@ -22,6 +22,7 @@ import com.familytasks.app.domain.model.Task
 import com.familytasks.app.domain.model.TaskStatus
 import com.familytasks.app.domain.repository.DeviceRepository
 import com.familytasks.app.domain.repository.TaskRepository
+import com.familytasks.app.domain.repository.TaskSyncStateRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -43,12 +44,9 @@ data class TaskListUiState(
     val wifiConnected: Boolean = true,
     val myName: String = "",
     val peerName: String? = null,
-    val lastConfirmedSyncTimestamp: Long = 0L,
-    val lastPartnerFileTimestamp: Long = 0L,
-    val lastOwnFileConfirmedTimestamp: Long = 0L,
-    val myDeviceId: String = "",
     val hasPairedDevice: Boolean = false,
-    val showPendingSyncIndicator: Boolean = false
+    val showPendingSyncIndicator: Boolean = false,
+    val confirmedSyncMap: Map<String, Long> = emptyMap()
 )
 
 private data class Filters(
@@ -62,10 +60,13 @@ private data class SyncStatus(
     val state: SyncState,
     val lastSyncAt: Long,
     val peerIp: String?,
-    val wifiConnected: Boolean,
-    val lastConfirmedSyncTimestamp: Long,
-    val lastPartnerFileTimestamp: Long,
-    val lastOwnFileConfirmedTimestamp: Long
+    val wifiConnected: Boolean
+)
+
+private data class SyncAndIndicator(
+    val sync: SyncStatus,
+    val showPendingSyncIndicator: Boolean,
+    val confirmedSyncMap: Map<String, Long>
 )
 
 @HiltViewModel
@@ -73,6 +74,7 @@ class TaskListViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val taskRepository: TaskRepository,
     private val deviceRepository: DeviceRepository,
+    private val taskSyncStateRepository: TaskSyncStateRepository,
     private val syncManager: SyncManager,
     val deviceIdManager: DeviceIdManager,
     val prefs: PreferencesManager,
@@ -114,29 +116,33 @@ class TaskListViewModel @Inject constructor(
         Filters(a, s, o, h)
     }
 
-    private val syncTimestamps = combine(
-        prefs.lastConfirmedSyncTimestampFlow,
-        prefs.lastPartnerFileTimestampFlow,
-        prefs.lastOwnFileConfirmedTimestampFlow
-    ) { confirmed, partner, ownFile -> Triple(confirmed, partner, ownFile) }
-
     private val syncStatus = combine(
         syncManager.syncState,
         syncManager.lastSyncAt,
         syncManager.peerIp,
-        _wifiConnected,
-        syncTimestamps
-    ) { st, ts, ip, wifi, (watermark, partnerTs, ownFileTs) ->
-        SyncStatus(st, ts, ip, wifi, watermark, partnerTs, ownFileTs)
+        _wifiConnected
+    ) { st, ts, ip, wifi ->
+        SyncStatus(st, ts, ip, wifi)
+    }
+
+    private val syncAndIndicator = combine(
+        syncStatus,
+        prefs.showPendingSyncIndicatorFlow,
+        taskSyncStateRepository.observeAll()
+    ) { sync, showPendingSyncIndicator, confirmations ->
+        SyncAndIndicator(
+            sync = sync,
+            showPendingSyncIndicator = showPendingSyncIndicator,
+            confirmedSyncMap = confirmations.associate { it.taskId to it.confirmedUpdatedAt }
+        )
     }
 
     val uiState: StateFlow<TaskListUiState> = combine(
         taskRepository.observeAllTasks(),
         deviceRepository.observeDevices(),
         filters,
-        syncStatus,
-        prefs.showPendingSyncIndicatorFlow
-    ) { rawTasks, deviceList, f, sync, showPendingSyncIndicator ->
+        syncAndIndicator
+    ) { rawTasks, deviceList, f, syncInd ->
         val deviceMap = deviceList.associateBy { it.deviceId }
         val filtered = rawTasks
             .filter { !it.deleted }
@@ -176,18 +182,15 @@ class TaskListViewModel @Inject constructor(
             assigneeFilter = f.assigneeFilter,
             statusFilter = f.statusFilter,
             sortOrder = f.sortOrder,
-            syncState = sync.state,
-            lastSyncAt = sync.lastSyncAt,
-            peerOnline = sync.peerIp != null,
-            wifiConnected = sync.wifiConnected,
+            syncState = syncInd.sync.state,
+            lastSyncAt = syncInd.sync.lastSyncAt,
+            peerOnline = syncInd.sync.peerIp != null,
+            wifiConnected = syncInd.sync.wifiConnected,
             myName = prefs.displayName,
             peerName = prefs.pairedDeviceId?.let { deviceMap[it]?.displayName },
-            lastConfirmedSyncTimestamp = sync.lastConfirmedSyncTimestamp,
-            lastPartnerFileTimestamp = sync.lastPartnerFileTimestamp,
-            lastOwnFileConfirmedTimestamp = sync.lastOwnFileConfirmedTimestamp,
-            myDeviceId = deviceIdManager.deviceId ?: "",
             hasPairedDevice = prefs.pairedDeviceId != null,
-            showPendingSyncIndicator = showPendingSyncIndicator
+            showPendingSyncIndicator = syncInd.showPendingSyncIndicator,
+            confirmedSyncMap = syncInd.confirmedSyncMap
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), TaskListUiState())
 

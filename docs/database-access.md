@@ -1,6 +1,6 @@
 # Обращения к базе данных
 
-Схема БД: две таблицы — `tasks` и `devices`. Обе управляются через Room DAO.
+Схема БД: три таблицы — `tasks`, `devices`, `task_sync_state`. Все управляются через Room DAO.
 
 ---
 
@@ -30,6 +30,18 @@
 | `upsert(device)` | INSERT OR UPDATE по PK | suspend, разовый | 1 строка |
 
 > Своё устройство в таблице `devices` **не хранится** — только партнёр. Собственные данные живут в SharedPreferences (`PreferencesManager`).
+
+---
+
+## TaskSyncStateDao — справочник запросов
+
+| Метод | SQL | Тип | Объём |
+|---|---|---|---|
+| `observeAll()` | `SELECT * FROM task_sync_state` | Flow (живой) | все подтверждённые задачи |
+| `upsertAll(entries)` | INSERT OR UPDATE по PK, batch | suspend, разовый | N строк в одной транзакции |
+| `deleteByIds(ids)` | `DELETE FROM task_sync_state WHERE taskId IN (:ids)` | suspend, разовый | N строк |
+
+Пишется из `MergeTasksUseCase.invoke()` — единая точка для WiFi и файлового импорта, см. `docs/pending-sync-indicator.md`. Таблица физически отделена от `tasks`: запись сюда не переэмиттит `observeAllTasks()` и не трогает `SyncService.observeTaskChanges()`.
 
 ---
 
@@ -120,9 +132,13 @@ triggerSync()
        └─ MergeTasksUseCase.invoke(remoteTasks)
             ├─ taskRepository.getAllTasksSnapshot()
             │    └─ taskDao.getAll()    → второе чтение ВСЕХ задач (для merge-map)
-            └─ taskRepository.upsertTasks(toUpsert)
-                 └─ taskDao.upsertAll() → запись только изменившихся задач
-                                          (0..N строк, N = added + updated)
+            ├─ taskRepository.upsertTasks(toUpsert)
+            │    └─ taskDao.upsertAll() → запись только изменившихся задач
+            │                             (0..N строк, N = added + updated)
+            └─ taskSyncStateRepository.confirm(confirmedEntries)
+                 └─ taskSyncStateDao.upsertAll() → запись подтверждений (0..N строк,
+                                                    без доп. чтения — сравнение уже
+                                                    в памяти из шага выше)
        └─ для каждого remoteDevice:
             deviceRepository.upsertDevice(device)
               └─ deviceDao.upsert()     → запись ~1 строки
@@ -145,7 +161,8 @@ HttpServer.onSyncRequest(incoming, senderIp)
   └─ syncUseCase.mergeAll(incoming.tasks, incoming.devices)
        └─ MergeTasksUseCase.invoke()
             ├─ taskDao.getAll()         → второе чтение ВСЕХ задач
-            └─ taskDao.upsertAll(toUpsert) → запись только изменившихся задач
+            ├─ taskDao.upsertAll(toUpsert) → запись только изменившихся задач
+            └─ taskSyncStateDao.upsertAll(confirmedEntries) → запись подтверждений
        └─ deviceDao.upsert() per device
 ```
 
@@ -182,6 +199,8 @@ taskRepository.observeAllTasks()   → Flow подписка (живёт всё 
 Любая запись в `tasks` (upsert или softDelete) в рамках одной транзакции → одна эмиссия из `observeAllTasks()`. Несколько строк в `upsertAll()` — всё равно одна эмиссия (одна транзакция).
 
 `MergeTasksUseCase` после фикса пишет только изменившиеся задачи (`toUpsert`), а не весь merged-список. Если `toUpsert` пуст — запись не происходит вообще, Room не эмитирует, паразитный sync-цикл не запускается.
+
+`task_sync_state` — отдельная таблица, Room инвалидирует Flow-запросы потаблично. Запись в `task_sync_state` (подтверждения) **не** переэмиттит `observeAllTasks()` (таблица `tasks`), поэтому не может разбудить `SyncService.observeTaskChanges()` независимо от того, пуст ли в этот раз `toUpsert`.
 
 Текущий лог-формат результата merge:
 ```

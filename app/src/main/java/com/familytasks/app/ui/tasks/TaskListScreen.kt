@@ -168,15 +168,10 @@ fun TaskListScreen(
                         when (item) {
                             is TaskListItem.Header -> DateGroupHeader(item.label)
                             is TaskListItem.Item -> {
-                                val syncThreshold = if (item.task.createdBy == state.myDeviceId) {
-                                    maxOf(state.lastConfirmedSyncTimestamp, state.lastOwnFileConfirmedTimestamp)
-                                } else {
-                                    maxOf(state.lastConfirmedSyncTimestamp, state.lastPartnerFileTimestamp)
-                                }
                                 val isPendingSync = state.showPendingSyncIndicator &&
                                     !item.task.isSecret &&
                                     state.hasPairedDevice &&
-                                    item.task.updatedAt > syncThreshold
+                                    item.task.updatedAt > (state.confirmedSyncMap[item.task.id] ?: 0L)
                                 if (item.task.status == TaskStatus.TODO) {
                                     SwipeableTaskCard(
                                         task = item.task,

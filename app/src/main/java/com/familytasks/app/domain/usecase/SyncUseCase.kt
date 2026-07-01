@@ -4,11 +4,13 @@ import com.familytasks.app.domain.model.Device
 import com.familytasks.app.domain.model.Task
 import com.familytasks.app.domain.repository.DeviceRepository
 import com.familytasks.app.domain.repository.TaskRepository
+import com.familytasks.app.domain.repository.TaskSyncStateRepository
 import javax.inject.Inject
 
 class SyncUseCase @Inject constructor(
     private val taskRepository: TaskRepository,
     private val deviceRepository: DeviceRepository,
+    private val taskSyncStateRepository: TaskSyncStateRepository,
     private val mergeTasksUseCase: MergeTasksUseCase
 ) {
     suspend fun getLocalSnapshot(): List<Task> = taskRepository.getAllTasksSnapshot()
@@ -29,6 +31,7 @@ class SyncUseCase @Inject constructor(
         val purgeableIds = sentTasks.filter { it.deleted && (it.id in remoteDeletedIds || it.id !in remoteIds) }.map { it.id }
         if (purgeableIds.isNotEmpty()) {
             taskRepository.purgeTasks(purgeableIds)
+            taskSyncStateRepository.deleteByIds(purgeableIds)
         }
         return purgeableIds.size
     }

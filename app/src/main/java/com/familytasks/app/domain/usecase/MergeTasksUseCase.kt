@@ -5,12 +5,15 @@ import com.familytasks.app.core.DeviceIdManager
 import com.familytasks.app.domain.model.Recurrence
 import com.familytasks.app.domain.model.Task
 import com.familytasks.app.domain.model.TaskStatus
+import com.familytasks.app.domain.model.TaskSyncConfirmation
 import com.familytasks.app.domain.repository.TaskRepository
+import com.familytasks.app.domain.repository.TaskSyncStateRepository
 import com.familytasks.app.notifications.NotificationScheduler
 import javax.inject.Inject
 
 class MergeTasksUseCase @Inject constructor(
     private val taskRepository: TaskRepository,
+    private val taskSyncStateRepository: TaskSyncStateRepository,
     private val notificationScheduler: NotificationScheduler,
     private val deviceIdManager: DeviceIdManager
 ) {
@@ -22,6 +25,7 @@ class MergeTasksUseCase @Inject constructor(
 
         var added = 0; var updated = 0; var unchanged = 0
         val toUpsert = mutableListOf<Task>()
+        val confirmedEntries = mutableListOf<TaskSyncConfirmation>()
 
         for (remote in remoteTasks) {
             val local = localTasks[remote.id]
@@ -30,6 +34,7 @@ class MergeTasksUseCase @Inject constructor(
                 local == null -> {
                     localTasks[remote.id] = remote
                     toUpsert.add(remote)
+                    confirmedEntries.add(TaskSyncConfirmation(remote.id, remote.updatedAt))
                     added++
                     AppLogger.d(TAG, "New: '${remote.title}' (assigned=${if (remote.assignedTo == myDeviceId) "me" else "other"}, deleted=${remote.deleted}, status=${remote.status})")
                     if (!remote.deleted && remote.assignedTo == myDeviceId) {
@@ -50,6 +55,7 @@ class MergeTasksUseCase @Inject constructor(
                 remote.updatedAt > local.updatedAt -> {
                     localTasks[remote.id] = remote
                     toUpsert.add(remote)
+                    confirmedEntries.add(TaskSyncConfirmation(remote.id, remote.updatedAt))
                     updated++
                     AppLogger.d(TAG, "Updated: '${remote.title}' (local=${local.updatedAt}, remote=${remote.updatedAt})")
                     if (!remote.deleted && remote.createdBy == myDeviceId && remote.status != local.status) {
@@ -79,15 +85,23 @@ class MergeTasksUseCase @Inject constructor(
                         notificationScheduler.cancelRecurrenceSpawn(remote.id)
                     }
                 }
+                remote.updatedAt == local.updatedAt -> {
+                    // версии совпали — партнёр точно видел текущую версию
+                    confirmedEntries.add(TaskSyncConfirmation(remote.id, remote.updatedAt))
+                    unchanged++
+                }
                 else -> unchanged++
-                // tie-break: keep local
+                // remote.updatedAt < local.updatedAt: tie-break, keep local — мой edit ещё не подтверждён
             }
         }
 
-        AppLogger.i(TAG, "Merge done: +$added new, ~$updated updated, =$unchanged unchanged — writing ${toUpsert.size}/${localTasks.size} tasks to DB")
+        AppLogger.i(TAG, "Merge done: +$added new, ~$updated updated, =$unchanged unchanged — writing ${toUpsert.size}/${localTasks.size} tasks to DB, confirming ${confirmedEntries.size}")
 
         if (toUpsert.isNotEmpty()) {
             taskRepository.upsertTasks(toUpsert)
+        }
+        if (confirmedEntries.isNotEmpty()) {
+            taskSyncStateRepository.confirm(confirmedEntries)
         }
         return localTasks.values.toList()
     }

@@ -148,7 +148,7 @@ ui/
 
 В Room enum'ы и `recurrence` хранятся как String (`status.value`, `priority.value`, `recurrence.serialize()`). Конвертация — extension-функции `toDomain()` / `toEntity()` в `TaskEntity.kt`.
 
-**Схема БД: версия 4.** `MIGRATION_1_2` добавила `completedAt INTEGER` (nullable); `MIGRATION_2_3` добавила `repeatRule TEXT NOT NULL DEFAULT 'none'`; `MIGRATION_3_4` добавила `isSecret INTEGER NOT NULL DEFAULT 0`. Все в `AppDatabase.kt`. Задачи, завершённые до v2, имеют `completedAt = null`.
+**Схема БД: версия 5.** `MIGRATION_1_2` добавила `completedAt INTEGER` (nullable); `MIGRATION_2_3` добавила `repeatRule TEXT NOT NULL DEFAULT 'none'`; `MIGRATION_3_4` добавила `isSecret INTEGER NOT NULL DEFAULT 0`; `MIGRATION_4_5` добавила отдельную таблицу `task_sync_state(taskId, confirmedUpdatedAt)` (не колонку `tasks`) — см. «Индикатор ожидания синхронизации» ниже. Все в `AppDatabase.kt`. Задачи, завершённые до v2, имеют `completedAt = null`.
 
 ### Device (SharedPreferences + Room)
 
@@ -296,9 +296,11 @@ Foreground Service **не выводит приложение из Doze** и н�
 
 Карточка задачи, которую партнёр ещё не получил, отображается приглушённой (`alpha = 0.65`) и со значком `Icons.Default.Sync` (14dp, серый) слева от названия. Семантика: задача **неактивна у партнёра** — существует только на этом устройстве.
 
-Флаг вычисляется в `TaskListScreen.kt`: `!task.isSecret && state.hasPairedDevice && task.updatedAt > syncThreshold`, где `syncThreshold` зависит от `createdBy`: моя задача → `max(lastConfirmedSyncTimestamp, lastOwnFileConfirmedTimestamp)`, задача партнёра → `max(lastConfirmedSyncTimestamp, lastPartnerFileTimestamp)`. Секретные задачи исключены — они не синкаются по определению. Без сопряжённого устройства индикатор не показывается.
+Флаг вычисляется в `TaskListScreen.kt`: `!task.isSecret && state.hasPairedDevice && task.updatedAt > (state.confirmedSyncMap[task.id] ?: 0L)` — одна формула без ветвления по `createdBy`.
 
-**Три watermark-а, гашение по файлу отделено от delta-sync.** `lastConfirmedSyncTimestamp` — боевой delta-watermark (двигает **только** `SyncService.triggerSync()` после WiFi round-trip; он же фильтрует исходящую дельту). Файловый импорт (`ExportImportManager`) пишет в **отдельные** индикаторные поля `lastOwnFileConfirmedTimestamp` (мои задачи, вернувшиеся в файле партнёра) и `lastPartnerFileTimestamp` (задачи партнёра в его файле) — они **не** влияют на дельту. Причина разделения: файловый снимок не атомарен, `max(updatedAt)` из него не доказывает доставку всех более ранних задач; если двигать им delta-watermark, WiFi-дельта может тихо пропустить недоставленную задачу (партнёр поднял `updatedAt` другой моей задачи). Все три поля в `PreferencesManager` имеют `…Flow` — ViewModel реагирует мгновенно. Подробнее: `docs/pending-sync-indicator.md`.
+**Per-task подтверждение через таблицу `task_sync_state`** (не скалярный watermark). Таблица `task_sync_state(taskId, confirmedUpdatedAt)` (БД версия 5, `MIGRATION_4_5`) пишется в `MergeTasksUseCase.invoke()` — единственной точке, общей для WiFi-инициатора, WiFi-responder-а и файлового импорта. Правило: для входящей `remote`-задачи, если `remote.updatedAt >= local.updatedAt` (версия до merge) — пишем подтверждение `remote.updatedAt`; если задачи среди входящих нет вовсе — не пишем, индикатор остаётся. Монотонность (запись без предварительного чтения) гарантирована тем, что `local.updatedAt` никогда не уменьшается во времени. Таблица физически отделена от `tasks` — запись в неё не переэмиттит `observeAllTasks()`, паразитный resync-цикл не задет. `SyncUseCase.purgeConfirmedTombstones()` чистит `task_sync_state` по тем же `id`, что физически удаляются из `tasks`.
+
+Раньше использовался скалярный watermark (`max(updatedAt)` по подмножеству задач в последнем sync/файле) — он давал **max-overshoot**: партнёр поднимал `updatedAt` одной моей задачи, watermark перепрыгивал через другую, реально недоставленную. Баг был чисто косметическим (WiFi-дельта и файловый экспорт не зависят от индикаторного watermark-а), но воспроизводимым — разбор в `proposal/pending-sync-indicator-strategy.md`. `lastConfirmedSyncTimestamp` в `PreferencesManager` остался, но только как боевой delta-sync watermark (`docs/delta-sync.md`) — индикатор от него больше не зависит. Подробнее: `docs/pending-sync-indicator.md`.
 
 ### Цвет дедлайна в списке задач
 
