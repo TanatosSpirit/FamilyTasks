@@ -169,7 +169,7 @@ fun TaskListScreen(
                             is TaskListItem.Header -> DateGroupHeader(item.label)
                             is TaskListItem.Item -> {
                                 val syncThreshold = if (item.task.createdBy == state.myDeviceId) {
-                                    state.lastConfirmedSyncTimestamp
+                                    maxOf(state.lastConfirmedSyncTimestamp, state.lastOwnFileConfirmedTimestamp)
                                 } else {
                                     maxOf(state.lastConfirmedSyncTimestamp, state.lastPartnerFileTimestamp)
                                 }

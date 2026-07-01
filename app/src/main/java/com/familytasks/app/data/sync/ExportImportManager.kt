@@ -81,9 +81,9 @@ class ExportImportManager @Inject constructor(
 
             val myTasksInFile = remoteTasks.filter { it.createdBy == deviceIdManager.deviceId }
             val maxOwnUpdatedAt = myTasksInFile.maxOfOrNull { it.updatedAt } ?: 0L
-            if (maxOwnUpdatedAt > prefs.lastConfirmedSyncTimestamp) {
-                prefs.lastConfirmedSyncTimestamp = maxOwnUpdatedAt
-                AppLogger.i(TAG, "Import: watermark advanced to $maxOwnUpdatedAt (${myTasksInFile.size} own tasks confirmed by partner)")
+            if (maxOwnUpdatedAt > prefs.lastOwnFileConfirmedTimestamp) {
+                prefs.lastOwnFileConfirmedTimestamp = maxOwnUpdatedAt
+                AppLogger.i(TAG, "Import: own-file watermark advanced to $maxOwnUpdatedAt (${myTasksInFile.size} own tasks confirmed by partner)")
             }
 
             val partnerTasksInFile = remoteTasks.filter { it.createdBy == pairedId }

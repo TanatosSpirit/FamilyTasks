@@ -76,6 +76,15 @@ class PreferencesManager @Inject constructor(
             lastPartnerFileTimestampFlow.value = value
         }
 
+    val lastOwnFileConfirmedTimestampFlow = MutableStateFlow(prefs.getLong(KEY_LAST_OWN_FILE_CONFIRMED_TS, 0L))
+
+    var lastOwnFileConfirmedTimestamp: Long
+        get() = prefs.getLong(KEY_LAST_OWN_FILE_CONFIRMED_TS, 0L)
+        set(value) {
+            prefs.edit().putLong(KEY_LAST_OWN_FILE_CONFIRMED_TS, value).apply()
+            lastOwnFileConfirmedTimestampFlow.value = value
+        }
+
     val hideSecretTasksFlow = MutableStateFlow(prefs.getBoolean(KEY_HIDE_SECRET_TASKS, false))
 
     var hideSecretTasks: Boolean
@@ -99,6 +108,7 @@ class PreferencesManager @Inject constructor(
         private const val KEY_LAST_PEER_IP = "last_peer_ip"
         private const val KEY_LAST_CONFIRMED_SYNC_TS = "last_confirmed_sync_ts"
         private const val KEY_LAST_PARTNER_FILE_TS = "last_partner_file_ts"
+        private const val KEY_LAST_OWN_FILE_CONFIRMED_TS = "last_own_file_confirmed_ts"
         private const val KEY_HIDE_SECRET_TASKS = "hide_secret_tasks"
     }
 }

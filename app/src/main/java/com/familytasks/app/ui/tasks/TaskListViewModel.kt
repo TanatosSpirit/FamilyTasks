@@ -45,6 +45,7 @@ data class TaskListUiState(
     val peerName: String? = null,
     val lastConfirmedSyncTimestamp: Long = 0L,
     val lastPartnerFileTimestamp: Long = 0L,
+    val lastOwnFileConfirmedTimestamp: Long = 0L,
     val myDeviceId: String = "",
     val hasPairedDevice: Boolean = false
 )
@@ -62,7 +63,8 @@ private data class SyncStatus(
     val peerIp: String?,
     val wifiConnected: Boolean,
     val lastConfirmedSyncTimestamp: Long,
-    val lastPartnerFileTimestamp: Long
+    val lastPartnerFileTimestamp: Long,
+    val lastOwnFileConfirmedTimestamp: Long
 )
 
 @HiltViewModel
@@ -113,8 +115,9 @@ class TaskListViewModel @Inject constructor(
 
     private val syncTimestamps = combine(
         prefs.lastConfirmedSyncTimestampFlow,
-        prefs.lastPartnerFileTimestampFlow
-    ) { confirmed, partner -> confirmed to partner }
+        prefs.lastPartnerFileTimestampFlow,
+        prefs.lastOwnFileConfirmedTimestampFlow
+    ) { confirmed, partner, ownFile -> Triple(confirmed, partner, ownFile) }
 
     private val syncStatus = combine(
         syncManager.syncState,
@@ -122,8 +125,8 @@ class TaskListViewModel @Inject constructor(
         syncManager.peerIp,
         _wifiConnected,
         syncTimestamps
-    ) { st, ts, ip, wifi, (watermark, partnerTs) ->
-        SyncStatus(st, ts, ip, wifi, watermark, partnerTs)
+    ) { st, ts, ip, wifi, (watermark, partnerTs, ownFileTs) ->
+        SyncStatus(st, ts, ip, wifi, watermark, partnerTs, ownFileTs)
     }
 
     val uiState: StateFlow<TaskListUiState> = combine(
@@ -179,6 +182,7 @@ class TaskListViewModel @Inject constructor(
             peerName = prefs.pairedDeviceId?.let { deviceMap[it]?.displayName },
             lastConfirmedSyncTimestamp = sync.lastConfirmedSyncTimestamp,
             lastPartnerFileTimestamp = sync.lastPartnerFileTimestamp,
+            lastOwnFileConfirmedTimestamp = sync.lastOwnFileConfirmedTimestamp,
             myDeviceId = deviceIdManager.deviceId ?: "",
             hasPairedDevice = prefs.pairedDeviceId != null
         )

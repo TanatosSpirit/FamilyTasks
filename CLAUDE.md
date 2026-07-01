@@ -296,9 +296,9 @@ Foreground Service **не выводит приложение из Doze** и н�
 
 Карточка задачи, которую партнёр ещё не получил, отображается приглушённой (`alpha = 0.65`) и со значком `Icons.Default.Sync` (14dp, серый) слева от названия. Семантика: задача **неактивна у партнёра** — существует только на этом устройстве.
 
-Флаг вычисляется в `TaskListScreen.kt`: `!task.isSecret && state.hasPairedDevice && task.updatedAt > state.lastConfirmedSyncTimestamp`. Секретные задачи исключены — они не синкаются по определению, замок уже говорит о них всё. Без сопряжённого устройства индикатор не показывается.
+Флаг вычисляется в `TaskListScreen.kt`: `!task.isSecret && state.hasPairedDevice && task.updatedAt > syncThreshold`, где `syncThreshold` зависит от `createdBy`: моя задача → `max(lastConfirmedSyncTimestamp, lastOwnFileConfirmedTimestamp)`, задача партнёра → `max(lastConfirmedSyncTimestamp, lastPartnerFileTimestamp)`. Секретные задачи исключены — они не синкаются по определению. Без сопряжённого устройства индикатор не показывается.
 
-`lastConfirmedSyncTimestamp` в `PreferencesManager` при записи обновляет `lastConfirmedSyncTimestampFlow` — ViewModel реагирует мгновенно и убирает индикатор сразу после успешного sync. Подробнее: `docs/pending-sync-indicator.md`.
+**Три watermark-а, гашение по файлу отделено от delta-sync.** `lastConfirmedSyncTimestamp` — боевой delta-watermark (двигает **только** `SyncService.triggerSync()` после WiFi round-trip; он же фильтрует исходящую дельту). Файловый импорт (`ExportImportManager`) пишет в **отдельные** индикаторные поля `lastOwnFileConfirmedTimestamp` (мои задачи, вернувшиеся в файле партнёра) и `lastPartnerFileTimestamp` (задачи партнёра в его файле) — они **не** влияют на дельту. Причина разделения: файловый снимок не атомарен, `max(updatedAt)` из него не доказывает доставку всех более ранних задач; если двигать им delta-watermark, WiFi-дельта может тихо пропустить недоставленную задачу (партнёр поднял `updatedAt` другой моей задачи). Все три поля в `PreferencesManager` имеют `…Flow` — ViewModel реагирует мгновенно. Подробнее: `docs/pending-sync-indicator.md`.
 
 ### Цвет дедлайна в списке задач
 
