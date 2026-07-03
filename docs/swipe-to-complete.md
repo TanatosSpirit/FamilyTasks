@@ -54,17 +54,18 @@
 
 **`TaskListViewModel.kt`** — метод `completeTask(task: Task)`:
 1. Проверяет `task.status != DONE` (guard от двойного вызова).
-2. Копирует задачу с `status = DONE`, `updatedAt = now`, `completedAt = now`.
-3. Сохраняет через `taskRepository.upsertTask(updated)`.
-4. Отменяет due-уведомления и RecurrenceSpawn через `NotificationScheduler`.
-5. Логирует через `AppLogger.d`.
+2. Если задача — активная повторяющаяся, назначенная на себя (`isRecurringEligible`), не завершает её сразу, а кладёт в `_pendingRecurrenceTask` — пользователь должен выбрать «Завершить текущую» / «Завершить цепочку» в диалоге (`docs/recurring-completion-choice.md`).
+3. Иначе — сразу вызывает `RecurringTaskCompletionUseCase.completeEndingChain(task)`: `status = DONE`, `updatedAt`/`completedAt = now`, отмена due-уведомлений и `RecurrenceSpawn`.
+4. Логирует через `AppLogger.d`.
 
 `completedAt` проставляется по той же конвенции, что и в `TaskDetailViewModel.cycleStatus()`.
+
+Для eligible-повторяющихся задач сам жест не завершает свайп — `confirmValueChange` возвращает `false`, карточка возвращается на место, пока не будет принято решение в диалоге. Подробности — `docs/recurring-completion-choice.md`.
 
 ---
 
 ## Ограничения
 
-- Повторяющиеся задачи (`recurrence != None`) свайпаются так же, как обычные. Свайп завершает текущую итерацию; клон следующей создаётся штатным `RecurrenceSpawnWorker` в момент `dueDate`.
+- Повторяющиеся задачи, назначенные на себя (`recurrence != None`, есть `dueDate`), свайпаются не мгновенно — сперва диалог выбора продолжения цепочки, см. `docs/recurring-completion-choice.md`. Повторяющиеся задачи, назначенные партнёру, и обычные задачи свайпаются как раньше — мгновенно.
 - Секретные задачи (`isSecret = true`) свайпаются без ограничений — `isSecret` не влияет на логику завершения.
 - Undo не предусмотрен: задачу можно открыть через вкладку «Готово» и вернуть вручную.

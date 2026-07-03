@@ -16,6 +16,7 @@ import com.familytasks.app.data.sync.SyncState
 import com.familytasks.app.domain.model.AssigneeFilter
 import com.familytasks.app.domain.model.Device
 import com.familytasks.app.domain.model.Priority
+import com.familytasks.app.domain.model.Recurrence
 import com.familytasks.app.domain.model.SortOrder
 import com.familytasks.app.domain.model.StatusFilter
 import com.familytasks.app.domain.model.Task
@@ -23,6 +24,7 @@ import com.familytasks.app.domain.model.TaskStatus
 import com.familytasks.app.domain.repository.DeviceRepository
 import com.familytasks.app.domain.repository.TaskRepository
 import com.familytasks.app.domain.repository.TaskSyncStateRepository
+import com.familytasks.app.domain.usecase.RecurringTaskCompletionUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -78,8 +80,12 @@ class TaskListViewModel @Inject constructor(
     private val syncManager: SyncManager,
     val deviceIdManager: DeviceIdManager,
     val prefs: PreferencesManager,
-    private val notificationScheduler: NotificationScheduler
+    private val notificationScheduler: NotificationScheduler,
+    private val recurringCompletion: RecurringTaskCompletionUseCase
 ) : ViewModel() {
+
+    private val _pendingRecurrenceTask = MutableStateFlow<Task?>(null)
+    val pendingRecurrenceTask: StateFlow<Task?> = _pendingRecurrenceTask
 
     private val _assigneeFilter = MutableStateFlow(AssigneeFilter.ALL)
     private val _statusFilter = MutableStateFlow(StatusFilter.ACTIVE)
@@ -200,13 +206,35 @@ class TaskListViewModel @Inject constructor(
 
     fun completeTask(task: Task) {
         if (task.status == TaskStatus.DONE) return
+        if (isRecurringEligible(task)) {
+            _pendingRecurrenceTask.value = task
+            return
+        }
         viewModelScope.launch {
-            val now = System.currentTimeMillis()
-            val updated = task.copy(status = TaskStatus.DONE, updatedAt = now, completedAt = now)
-            taskRepository.upsertTask(updated)
-            notificationScheduler.cancelDueNotifications(task.id)
-            notificationScheduler.cancelRecurrenceSpawn(task.id)
+            recurringCompletion.completeEndingChain(task)
             AppLogger.d("TaskListViewModel", "completeTask: '${task.title}' marked done via swipe")
         }
     }
+
+    fun dismissRecurrenceChoice() {
+        _pendingRecurrenceTask.value = null
+    }
+
+    fun confirmCompleteChain(task: Task) {
+        viewModelScope.launch {
+            recurringCompletion.completeEndingChain(task)
+            _pendingRecurrenceTask.value = null
+        }
+    }
+
+    fun confirmCompleteAndContinue(task: Task) {
+        viewModelScope.launch {
+            recurringCompletion.completeAndContinue(task)
+            _pendingRecurrenceTask.value = null
+        }
+    }
+
+    private fun isRecurringEligible(task: Task) =
+        task.recurrence != Recurrence.None && task.dueDate != null &&
+            task.assignedTo == deviceIdManager.deviceId
 }

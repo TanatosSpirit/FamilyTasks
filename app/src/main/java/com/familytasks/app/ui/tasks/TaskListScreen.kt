@@ -14,7 +14,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.TextButton
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Sort
@@ -86,7 +88,22 @@ fun TaskListScreen(
     vm: TaskListViewModel = hiltViewModel()
 ) {
     val state by vm.uiState.collectAsStateWithLifecycle()
+    val pendingRecurrenceTask by vm.pendingRecurrenceTask.collectAsStateWithLifecycle()
     var sortMenuOpen by remember { mutableStateOf(false) }
+
+    pendingRecurrenceTask?.let { pendingTask ->
+        AlertDialog(
+            onDismissRequest = vm::dismissRecurrenceChoice,
+            title = { Text("Повторяющаяся задача") },
+            text = { Text("Завершить только это выполнение или всю цепочку повторов?") },
+            confirmButton = {
+                TextButton(onClick = { vm.confirmCompleteAndContinue(pendingTask) }) { Text("Завершить текущую") }
+            },
+            dismissButton = {
+                TextButton(onClick = { vm.confirmCompleteChain(pendingTask) }) { Text("Завершить цепочку") }
+            }
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -173,10 +190,14 @@ fun TaskListScreen(
                                     state.hasPairedDevice &&
                                     item.task.updatedAt > (state.confirmedSyncMap[item.task.id] ?: 0L)
                                 if (item.task.status == TaskStatus.TODO) {
+                                    val isRecurringEligible = item.task.recurrence != Recurrence.None &&
+                                        item.task.dueDate != null &&
+                                        item.task.assignedTo == vm.deviceIdManager.deviceId
                                     SwipeableTaskCard(
                                         task = item.task,
                                         assigneeColor = item.task.assignedTo?.let { state.devices[it]?.color },
                                         isPendingSync = isPendingSync,
+                                        isRecurringEligible = isRecurringEligible,
                                         onClick = { onTaskClick(item.task.id) },
                                         onComplete = { vm.completeTask(item.task) }
                                     )
@@ -310,6 +331,7 @@ private fun SwipeableTaskCard(
     task: Task,
     assigneeColor: Int?,
     isPendingSync: Boolean,
+    isRecurringEligible: Boolean,
     onClick: () -> Unit,
     onComplete: () -> Unit
 ) {
@@ -326,7 +348,7 @@ private fun SwipeableTaskCard(
                 val fraction = if (cardWidth > 0) dragOffset / cardWidth else 0f
                 if (fraction >= 0.3f) {
                     onComplete()
-                    true
+                    !isRecurringEligible
                 } else {
                     false
                 }

@@ -59,8 +59,23 @@ fun TaskDetailScreen(
 
     val task by vm.task.collectAsStateWithLifecycle()
     val devices by vm.devices.collectAsStateWithLifecycle()
+    val showRecurrenceChoice by vm.showRecurrenceChoice.collectAsStateWithLifecycle()
     var showDeleteDialog by remember { mutableStateOf(false) }
     var editMode by remember { mutableStateOf(false) }
+
+    if (showRecurrenceChoice) {
+        AlertDialog(
+            onDismissRequest = vm::dismissRecurrenceChoice,
+            title = { Text("Повторяющаяся задача") },
+            text = { Text("Завершить только это выполнение или всю цепочку повторов?") },
+            confirmButton = {
+                TextButton(onClick = vm::confirmCompleteAndContinue) { Text("Завершить текущую") }
+            },
+            dismissButton = {
+                TextButton(onClick = vm::confirmCompleteChain) { Text("Завершить цепочку") }
+            }
+        )
+    }
 
     if (showDeleteDialog) {
         AlertDialog(
@@ -114,7 +129,7 @@ fun TaskDetailScreen(
             ViewTaskContent(
                 task = t,
                 devices = devices,
-                onCycleStatus = vm::cycleStatus,
+                onCycleStatus = vm::onCompleteButtonClicked,
                 modifier = Modifier.padding(padding)
             )
         }

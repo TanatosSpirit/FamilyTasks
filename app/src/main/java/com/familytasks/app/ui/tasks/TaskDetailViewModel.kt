@@ -8,8 +8,10 @@ import com.familytasks.app.core.PreferencesManager
 import com.familytasks.app.domain.model.Device
 import com.familytasks.app.domain.model.Task
 import com.familytasks.app.domain.model.TaskStatus
+import com.familytasks.app.domain.model.Recurrence
 import com.familytasks.app.domain.repository.DeviceRepository
 import com.familytasks.app.domain.repository.TaskRepository
+import com.familytasks.app.domain.usecase.RecurringTaskCompletionUseCase
 import com.familytasks.app.notifications.NotificationScheduler
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,7 +25,8 @@ class TaskDetailViewModel @Inject constructor(
     private val deviceRepository: DeviceRepository,
     private val deviceIdManager: DeviceIdManager,
     private val prefs: PreferencesManager,
-    private val notificationScheduler: NotificationScheduler
+    private val notificationScheduler: NotificationScheduler,
+    private val recurringCompletion: RecurringTaskCompletionUseCase
 ) : ViewModel() {
 
     private val _task = MutableStateFlow<Task?>(null)
@@ -31,6 +34,9 @@ class TaskDetailViewModel @Inject constructor(
 
     private val _devices = MutableStateFlow<List<Device>>(emptyList())
     val devices: StateFlow<List<Device>> = _devices
+
+    private val _showRecurrenceChoice = MutableStateFlow(false)
+    val showRecurrenceChoice: StateFlow<Boolean> = _showRecurrenceChoice
 
     fun load(taskId: String) {
         viewModelScope.launch {
@@ -58,6 +64,39 @@ class TaskDetailViewModel @Inject constructor(
         update(updated)
         applyDueNotificationState(updated, "cycleStatus")
     }
+
+    fun onCompleteButtonClicked() {
+        val current = _task.value ?: return
+        if (current.status == TaskStatus.TODO && isRecurringEligible(current)) {
+            _showRecurrenceChoice.value = true
+        } else {
+            cycleStatus()
+        }
+    }
+
+    fun dismissRecurrenceChoice() {
+        _showRecurrenceChoice.value = false
+    }
+
+    fun confirmCompleteChain() {
+        val current = _task.value ?: return
+        viewModelScope.launch {
+            _task.value = recurringCompletion.completeEndingChain(current)
+            _showRecurrenceChoice.value = false
+        }
+    }
+
+    fun confirmCompleteAndContinue() {
+        val current = _task.value ?: return
+        viewModelScope.launch {
+            _task.value = recurringCompletion.completeAndContinue(current)
+            _showRecurrenceChoice.value = false
+        }
+    }
+
+    private fun isRecurringEligible(task: Task) =
+        task.recurrence != Recurrence.None && task.dueDate != null &&
+            task.assignedTo == deviceIdManager.deviceId
 
     fun delete(onDone: () -> Unit) {
         val task = _task.value ?: return
