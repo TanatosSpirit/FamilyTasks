@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
@@ -449,11 +450,22 @@ private fun TaskCard(
                     textDecoration = if (task.status == TaskStatus.DONE) TextDecoration.LineThrough else null
                 )
                 if (task.dueDate != null) {
-                    Text(
-                        text = "До: ${formatDate(task.dueDate)}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = dueDateColor(task.dueDate, task.status, task.completedAt)
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "До: ${formatDate(task.dueDate)}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = dueDateColor(task.dueDate, task.status, task.completedAt)
+                        )
+                        if (!task.description.isNullOrBlank()) {
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Icon(
+                                imageVector = Icons.Default.Description,
+                                contentDescription = "Есть описание",
+                                modifier = Modifier.size(12.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                 }
             }
             if (task.isSecret) {
