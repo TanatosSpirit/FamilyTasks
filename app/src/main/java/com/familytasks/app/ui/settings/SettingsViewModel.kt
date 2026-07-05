@@ -1,16 +1,21 @@
 package com.familytasks.app.ui.settings
 
+import android.content.Context
 import android.content.Intent
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.familytasks.app.core.AppLogger
 import com.familytasks.app.core.DeviceIdManager
 import com.familytasks.app.core.PreferencesManager
 import com.familytasks.app.data.sync.ExportImportManager
 import com.familytasks.app.data.sync.SyncManager
+import com.familytasks.app.data.sync.SyncService
 import com.familytasks.app.domain.model.Device
 import com.familytasks.app.domain.repository.DeviceRepository
 import com.familytasks.app.notifications.NotificationScheduler
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
@@ -27,6 +32,7 @@ data class SettingsUiState(
     val hideSecretTasks: Boolean = false,
     val showPendingSyncIndicator: Boolean = false,
     val webUiEnabled: Boolean = false,
+    val syncPaused: Boolean = false,
     val ownIp: String? = null,
     val dailySummaryEnabled: Boolean = false,
     val dailySummaryHour: Int = 8,
@@ -35,6 +41,7 @@ data class SettingsUiState(
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val prefs: PreferencesManager,
     private val deviceIdManager: DeviceIdManager,
     private val deviceRepository: DeviceRepository,
@@ -69,6 +76,7 @@ class SettingsViewModel @Inject constructor(
                 hideSecretTasks = prefs.hideSecretTasks,
                 showPendingSyncIndicator = prefs.showPendingSyncIndicator,
                 webUiEnabled = prefs.webUiEnabled,
+                syncPaused = prefs.syncPaused,
                 ownIp = prefs.lastKnownOwnIp,
                 dailySummaryEnabled = prefs.dailySummaryEnabled,
                 dailySummaryHour = prefs.dailySummaryHour,
@@ -105,6 +113,29 @@ class SettingsViewModel @Inject constructor(
     fun setWebUiEnabled(v: Boolean) {
         prefs.webUiEnabled = v
         _state.update { it.copy(webUiEnabled = v, ownIp = prefs.lastKnownOwnIp) }
+        if (v) {
+            ContextCompat.startForegroundService(context, Intent(context, SyncService::class.java))
+        } else if (prefs.syncPaused) {
+            context.stopService(Intent(context, SyncService::class.java))
+        }
+    }
+
+    fun setSyncPaused(v: Boolean) {
+        prefs.syncPaused = v
+        _state.update { it.copy(syncPaused = v) }
+        if (v) {
+            AppLogger.i(TAG, "Sync paused by user")
+            SyncService.cancelKeepAliveAlarm(context)
+            if (!prefs.webUiEnabled) {
+                context.stopService(Intent(context, SyncService::class.java))
+            }
+        } else {
+            AppLogger.i(TAG, "Sync resumed by user")
+            ContextCompat.startForegroundService(
+                context,
+                Intent(context, SyncService::class.java).apply { action = SyncService.ACTION_SYNC_NOW }
+            )
+        }
     }
 
     fun setDailySummaryEnabled(v: Boolean) {
@@ -132,5 +163,9 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             onIntent(exportImportManager.buildShareIntent())
         }
+    }
+
+    companion object {
+        private const val TAG = "SettingsViewModel"
     }
 }

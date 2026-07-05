@@ -130,6 +130,18 @@ fun SettingsScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+            SwitchRow(
+                label = "Пауза синхронизации (партнёра долго не будет)",
+                checked = state.syncPaused,
+                onToggle = vm::setSyncPaused
+            )
+            if (state.syncPaused) {
+                Text(
+                    "Сканирование сети, sync и keepAlive отключены. Задачи копятся локально и сравняются, как только вы вернёте тумблер обратно.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             val context = LocalContext.current
             OutlinedButton(
                 onClick = {

@@ -12,6 +12,7 @@ class HttpServer(
     private val ownDeviceId: String,
     private val onSyncRequest: suspend (payload: SyncPayload, senderIp: String) -> SyncPayload,
     private val onPeerIdentified: (callerDeviceId: String, senderIp: String) -> Unit = { _, _ -> },
+    private val isSyncEnabled: () -> Boolean = { true },
     private val isWebUiEnabled: () -> Boolean = { false },
     private val webUiHtml: String = "",
     private val onWebListTasks: suspend () -> SyncPayload = { SyncPayload(deviceId = "", tasks = emptyList(), devices = emptyList()) },
@@ -24,8 +25,8 @@ class HttpServer(
 
     override fun serve(session: IHTTPSession): Response {
         return when {
-            session.method == Method.GET && session.uri == "/identify" -> handleIdentify(session)
-            session.method == Method.POST && session.uri == "/sync" -> handleSync(session)
+            session.method == Method.GET && session.uri == "/identify" && isSyncEnabled() -> handleIdentify(session)
+            session.method == Method.POST && session.uri == "/sync" && isSyncEnabled() -> handleSync(session)
             session.method == Method.GET && session.uri == "/web" && isWebUiEnabled() ->
                 newFixedLengthResponse(Response.Status.OK, "text/html", webUiHtml)
             session.method == Method.GET && session.uri == "/api/tasks" && isWebUiEnabled() -> handleWebListTasks()

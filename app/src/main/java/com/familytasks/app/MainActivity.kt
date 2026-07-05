@@ -69,6 +69,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun startSyncService() {
+        if (prefs.syncPaused && !prefs.webUiEnabled) return
         try {
             startForegroundService(Intent(this, SyncService::class.java))
         } catch (_: Exception) {}

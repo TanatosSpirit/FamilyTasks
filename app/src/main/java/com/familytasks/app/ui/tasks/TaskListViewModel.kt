@@ -48,7 +48,8 @@ data class TaskListUiState(
     val peerName: String? = null,
     val hasPairedDevice: Boolean = false,
     val showPendingSyncIndicator: Boolean = false,
-    val confirmedSyncMap: Map<String, Long> = emptyMap()
+    val confirmedSyncMap: Map<String, Long> = emptyMap(),
+    val syncPaused: Boolean = false
 )
 
 private data class Filters(
@@ -62,7 +63,8 @@ private data class SyncStatus(
     val state: SyncState,
     val lastSyncAt: Long,
     val peerIp: String?,
-    val wifiConnected: Boolean
+    val wifiConnected: Boolean,
+    val syncPaused: Boolean
 )
 
 private data class SyncAndIndicator(
@@ -126,9 +128,10 @@ class TaskListViewModel @Inject constructor(
         syncManager.syncState,
         syncManager.lastSyncAt,
         syncManager.peerIp,
-        _wifiConnected
-    ) { st, ts, ip, wifi ->
-        SyncStatus(st, ts, ip, wifi)
+        _wifiConnected,
+        prefs.syncPausedFlow
+    ) { st, ts, ip, wifi, paused ->
+        SyncStatus(st, ts, ip, wifi, paused)
     }
 
     private val syncAndIndicator = combine(
@@ -196,7 +199,8 @@ class TaskListViewModel @Inject constructor(
             peerName = prefs.pairedDeviceId?.let { deviceMap[it]?.displayName },
             hasPairedDevice = prefs.pairedDeviceId != null,
             showPendingSyncIndicator = syncInd.showPendingSyncIndicator,
-            confirmedSyncMap = syncInd.confirmedSyncMap
+            confirmedSyncMap = syncInd.confirmedSyncMap,
+            syncPaused = syncInd.sync.syncPaused
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), TaskListUiState())
 

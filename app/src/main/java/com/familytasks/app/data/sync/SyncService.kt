@@ -75,6 +75,7 @@ class SyncService : Service() {
 
     private val ipTrackingCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) {
+            if (prefs.syncPaused) return
             val allAddresses = connectivityManager.getLinkProperties(network)
                 ?.linkAddresses
                 ?.mapNotNull { it.address.hostAddress }
@@ -120,6 +121,7 @@ class SyncService : Service() {
         }
 
         override fun onLinkPropertiesChanged(network: Network, linkProperties: LinkProperties) {
+            if (prefs.syncPaused) return
             val newIp = linkProperties.linkAddresses
                 .firstOrNull { it.address.hostAddress?.contains('.') == true }
                 ?.address?.hostAddress ?: return
@@ -163,7 +165,7 @@ class SyncService : Service() {
             .build()
         connectivityManager.registerNetworkCallback(request, ipTrackingCallback)
         startHttpServer()
-        scheduleKeepAlive()
+        if (!prefs.syncPaused) scheduleKeepAlive()
         observeTaskChanges()
         registerReceiver(wifiReceiver, IntentFilter(WifiManager.NETWORK_STATE_CHANGED_ACTION))
     }
@@ -252,6 +254,7 @@ class SyncService : Service() {
                     }
                 }
             },
+            isSyncEnabled = { !prefs.syncPaused },
             isWebUiEnabled = { prefs.webUiEnabled },
             webUiHtml = webUiHtml,
             onWebListTasks = {
@@ -321,6 +324,7 @@ class SyncService : Service() {
     }
 
     private fun startSubnetScan(confirmedNetwork: Network? = null) {
+        if (prefs.syncPaused) return
         if (prefs.pairedDeviceId == null) {
             AppLogger.d(TAG, "startSubnetScan — no paired device, skipping")
             return
@@ -384,6 +388,10 @@ class SyncService : Service() {
     }
 
     private fun performKeepAlive() {
+        if (prefs.syncPaused) {
+            AppLogger.d(TAG, "KeepAlive skipped — sync paused")
+            return
+        }
         scheduleKeepAlive()
         scope.launch {
             logDeviceState()
@@ -435,11 +443,12 @@ class SyncService : Service() {
                 .distinctUntilChanged()
                 .drop(1)
                 .debounce(3_000L)
-                .collect { triggerSync() }
+                .collect { if (!prefs.syncPaused) triggerSync() }
         }
     }
 
     private fun triggerSync() {
+        if (prefs.syncPaused) return
         val peerIp = syncManager.peerIp.value ?: run {
             AppLogger.d(TAG, "triggerSync skipped — no peer IP, starting scan")
             if (scanJob?.isActive != true) startSubnetScan()
@@ -562,5 +571,18 @@ class SyncService : Service() {
         const val NOTIFICATION_ID = 1
         const val ACTION_SYNC_NOW = "com.familytasks.app.SYNC_NOW"
         const val ACTION_KEEPALIVE = "com.familytasks.app.KEEPALIVE"
+
+        fun cancelKeepAliveAlarm(context: Context) {
+            val alarmManager = context.getSystemService(AlarmManager::class.java)
+            val intent = Intent(context, KeepAliveReceiver::class.java).apply {
+                action = ACTION_KEEPALIVE
+            }
+            val pendingIntent = PendingIntent.getBroadcast(
+                context, 0, intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            alarmManager.cancel(pendingIntent)
+            AppLogger.i(TAG, "KeepAlive alarm cancelled (sync paused)")
+        }
     }
 }
