@@ -9,6 +9,7 @@ import com.familytasks.app.data.sync.ExportImportManager
 import com.familytasks.app.data.sync.SyncManager
 import com.familytasks.app.domain.model.Device
 import com.familytasks.app.domain.repository.DeviceRepository
+import com.familytasks.app.notifications.NotificationScheduler
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -26,7 +27,10 @@ data class SettingsUiState(
     val hideSecretTasks: Boolean = false,
     val showPendingSyncIndicator: Boolean = false,
     val webUiEnabled: Boolean = false,
-    val ownIp: String? = null
+    val ownIp: String? = null,
+    val dailySummaryEnabled: Boolean = false,
+    val dailySummaryHour: Int = 8,
+    val dailySummaryMinute: Int = 0
 )
 
 @HiltViewModel
@@ -35,7 +39,8 @@ class SettingsViewModel @Inject constructor(
     private val deviceIdManager: DeviceIdManager,
     private val deviceRepository: DeviceRepository,
     private val syncManager: SyncManager,
-    private val exportImportManager: ExportImportManager
+    private val exportImportManager: ExportImportManager,
+    private val notificationScheduler: NotificationScheduler
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(SettingsUiState())
@@ -64,7 +69,10 @@ class SettingsViewModel @Inject constructor(
                 hideSecretTasks = prefs.hideSecretTasks,
                 showPendingSyncIndicator = prefs.showPendingSyncIndicator,
                 webUiEnabled = prefs.webUiEnabled,
-                ownIp = prefs.lastKnownOwnIp
+                ownIp = prefs.lastKnownOwnIp,
+                dailySummaryEnabled = prefs.dailySummaryEnabled,
+                dailySummaryHour = prefs.dailySummaryHour,
+                dailySummaryMinute = prefs.dailySummaryMinute
             )
         }
     }
@@ -97,6 +105,25 @@ class SettingsViewModel @Inject constructor(
     fun setWebUiEnabled(v: Boolean) {
         prefs.webUiEnabled = v
         _state.update { it.copy(webUiEnabled = v, ownIp = prefs.lastKnownOwnIp) }
+    }
+
+    fun setDailySummaryEnabled(v: Boolean) {
+        prefs.dailySummaryEnabled = v
+        _state.update { it.copy(dailySummaryEnabled = v) }
+        if (v) {
+            notificationScheduler.scheduleDailySummaryAlarm(prefs.dailySummaryHour, prefs.dailySummaryMinute)
+        } else {
+            notificationScheduler.cancelDailySummaryAlarm()
+        }
+    }
+
+    fun setDailySummaryTime(hour: Int, minute: Int) {
+        prefs.dailySummaryHour = hour
+        prefs.dailySummaryMinute = minute
+        _state.update { it.copy(dailySummaryHour = hour, dailySummaryMinute = minute) }
+        if (_state.value.dailySummaryEnabled) {
+            notificationScheduler.scheduleDailySummaryAlarm(hour, minute)
+        }
     }
 
     val deviceShortId: String get() = deviceIdManager.deviceId.take(8)

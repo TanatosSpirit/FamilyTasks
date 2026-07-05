@@ -1,12 +1,14 @@
 package com.familytasks.app.ui.settings
 
 import android.annotation.SuppressLint
+import android.app.TimePickerDialog
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.PowerManager
 import android.provider.Settings
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -163,6 +165,34 @@ fun SettingsScreen(
                 checked = state.notifyStatusChange,
                 onToggle = vm::setNotifyStatusChange
             )
+            SwitchRow(
+                label = "Ежедневная сводка",
+                checked = state.dailySummaryEnabled,
+                onToggle = vm::setDailySummaryEnabled
+            )
+            if (state.dailySummaryEnabled) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            TimePickerDialog(
+                                context,
+                                { _, h, min -> vm.setDailySummaryTime(h, min) },
+                                state.dailySummaryHour,
+                                state.dailySummaryMinute,
+                                true
+                            ).show()
+                        }
+                        .padding(vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "Напомнить в %02d:%02d".format(state.dailySummaryHour, state.dailySummaryMinute),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            }
             HorizontalDivider()
             Text("Конфиденциальность", style = MaterialTheme.typography.titleMedium)
             SwitchRow(

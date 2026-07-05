@@ -65,6 +65,10 @@
             android:exported="false" />
 
         <receiver
+            android:name=".notifications.DailySummaryReceiver"
+            android:exported="false" />
+
+        <receiver
             android:name=".data.sync.BootReceiver"
             android:exported="true">
             <intent-filter>

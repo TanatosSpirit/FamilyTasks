@@ -1,5 +1,6 @@
 package com.familytasks.app.notifications
 
+import android.app.AlarmManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -16,6 +17,8 @@ import com.familytasks.app.core.PreferencesManager
 import com.familytasks.app.domain.model.Recurrence
 import com.familytasks.app.domain.model.Task
 import dagger.hilt.android.qualifiers.ApplicationContext
+import java.time.ZoneId
+import java.time.ZonedDateTime
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -31,7 +34,8 @@ class NotificationScheduler @Inject constructor(
         listOf(
             NotificationChannel(CH_DUE, "Срок задачи", NotificationManager.IMPORTANCE_DEFAULT),
             NotificationChannel(CH_NEW_TASK, "Новые задачи", NotificationManager.IMPORTANCE_HIGH),
-            NotificationChannel(CH_STATUS, "Статус задачи", NotificationManager.IMPORTANCE_DEFAULT)
+            NotificationChannel(CH_STATUS, "Статус задачи", NotificationManager.IMPORTANCE_DEFAULT),
+            NotificationChannel(CH_DAILY_SUMMARY, "Ежедневная сводка", NotificationManager.IMPORTANCE_DEFAULT)
         ).forEach { manager.createNotificationChannel(it) }
     }
 
@@ -128,6 +132,75 @@ class NotificationScheduler @Inject constructor(
         cancelWork(taskId + "_spawn")
     }
 
+    /**
+     * Следующее наступление [hour]:[minute] по местному времени: сегодня, если ещё не
+     * наступило, иначе завтра. `ZonedDateTime` (в отличие от "+24*60*60*1000") корректно
+     * учитывает переход на летнее/зимнее время при прибавлении суток.
+     */
+    fun scheduleDailySummaryAlarm(hour: Int, minute: Int) {
+        val alarmManager = context.getSystemService(AlarmManager::class.java)
+        val pendingIntent = dailySummaryAlarmPendingIntent()
+        val zone = ZoneId.systemDefault()
+        val now = ZonedDateTime.now(zone)
+        var next = now.withHour(hour).withMinute(minute).withSecond(0).withNano(0)
+        if (!next.isAfter(now)) {
+            next = next.plusDays(1)
+        }
+        val triggerAt = next.toInstant().toEpochMilli()
+        alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
+        AppLogger.d(TAG, "Daily summary alarm scheduled for $hour:$minute — next trigger at $triggerAt")
+    }
+
+    fun cancelDailySummaryAlarm() {
+        val alarmManager = context.getSystemService(AlarmManager::class.java)
+        alarmManager.cancel(dailySummaryAlarmPendingIntent())
+        AppLogger.d(TAG, "Daily summary alarm cancelled")
+    }
+
+    private fun dailySummaryAlarmPendingIntent(): PendingIntent {
+        val intent = Intent(context, DailySummaryReceiver::class.java).apply {
+            action = DailySummaryReceiver.ACTION_DAILY_SUMMARY
+        }
+        return PendingIntent.getBroadcast(
+            context, REQUEST_CODE_DAILY_SUMMARY_ALARM, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+    }
+
+    /** Всегда показывает число, включая 0 — отсутствие уведомления не должно путаться с «дел нет». */
+    fun showDailySummaryNotification(count: Int) {
+        val notification = NotificationCompat.Builder(context, CH_DAILY_SUMMARY)
+            .setContentTitle("Ежедневная сводка")
+            .setContentText(taskCountLabel(count))
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setAutoCancel(true)
+            .setContentIntent(openAppPendingIntent())
+            .build()
+        manager.notify(NOTIFICATION_ID_DAILY_SUMMARY, notification)
+    }
+
+    private fun taskCountLabel(count: Int): String {
+        val mod100 = count % 100
+        val mod10 = count % 10
+        val word = when {
+            mod100 in 11..14 -> "дел"
+            mod10 == 1 -> "дело"
+            mod10 in 2..4 -> "дела"
+            else -> "дел"
+        }
+        return "$count $word на сегодня"
+    }
+
+    private fun openAppPendingIntent(): PendingIntent {
+        val intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        return PendingIntent.getActivity(
+            context, REQUEST_CODE_DAILY_SUMMARY_CONTENT, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+    }
+
     private fun cancelWork(tag: String) {
         WorkManager.getInstance(context).cancelUniqueWork(tag)
     }
@@ -168,5 +241,9 @@ class NotificationScheduler @Inject constructor(
         const val CH_DUE = "ch_due_date"
         const val CH_NEW_TASK = "ch_new_task"
         const val CH_STATUS = "ch_status"
+        const val CH_DAILY_SUMMARY = "ch_daily_summary"
+        private const val REQUEST_CODE_DAILY_SUMMARY_ALARM = 100
+        private const val REQUEST_CODE_DAILY_SUMMARY_CONTENT = 101
+        private const val NOTIFICATION_ID_DAILY_SUMMARY = 9001
     }
 }

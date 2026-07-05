@@ -50,6 +50,18 @@ class PreferencesManager @Inject constructor(
         get() = prefs.getBoolean(KEY_NOTIFY_STATUS, true)
         set(value) = prefs.edit().putBoolean(KEY_NOTIFY_STATUS, value).apply()
 
+    var dailySummaryEnabled: Boolean
+        get() = prefs.getBoolean(KEY_DAILY_SUMMARY_ENABLED, false)
+        set(value) = prefs.edit().putBoolean(KEY_DAILY_SUMMARY_ENABLED, value).apply()
+
+    var dailySummaryHour: Int
+        get() = prefs.getInt(KEY_DAILY_SUMMARY_HOUR, 8)
+        set(value) = prefs.edit().putInt(KEY_DAILY_SUMMARY_HOUR, value).apply()
+
+    var dailySummaryMinute: Int
+        get() = prefs.getInt(KEY_DAILY_SUMMARY_MINUTE, 0)
+        set(value) = prefs.edit().putInt(KEY_DAILY_SUMMARY_MINUTE, value).apply()
+
     var lastKnownOwnIp: String?
         get() = prefs.getString(KEY_LAST_OWN_IP, null)
         set(value) = prefs.edit().putString(KEY_LAST_OWN_IP, value).apply()
@@ -104,6 +116,9 @@ class PreferencesManager @Inject constructor(
         private const val KEY_NOTIFY_DUE = "notify_due_date"
         private const val KEY_NOTIFY_NEW = "notify_new_task"
         private const val KEY_NOTIFY_STATUS = "notify_status_change"
+        private const val KEY_DAILY_SUMMARY_ENABLED = "daily_summary_enabled"
+        private const val KEY_DAILY_SUMMARY_HOUR = "daily_summary_hour"
+        private const val KEY_DAILY_SUMMARY_MINUTE = "daily_summary_minute"
         private const val KEY_LAST_OWN_IP = "last_own_ip"
         private const val KEY_LAST_PEER_IP = "last_peer_ip"
         private const val KEY_LAST_CONFIRMED_SYNC_TS = "last_confirmed_sync_ts"
