@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -37,6 +38,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -130,6 +132,7 @@ fun TaskDetailScreen(
                 task = t,
                 devices = devices,
                 onCycleStatus = vm::onCompleteButtonClicked,
+                onToggleChecklistItem = vm::toggleChecklistItem,
                 modifier = Modifier.padding(padding)
             )
         }
@@ -141,6 +144,7 @@ private fun ViewTaskContent(
     task: Task,
     devices: List<com.familytasks.app.domain.model.Device>,
     onCycleStatus: () -> Unit,
+    onToggleChecklistItem: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val devicesMap = devices.associateBy { it.deviceId }
@@ -153,6 +157,21 @@ private fun ViewTaskContent(
         Text(task.title, style = MaterialTheme.typography.headlineSmall)
         if (!task.description.isNullOrBlank()) {
             Text(task.description, style = MaterialTheme.typography.bodyMedium)
+        }
+        if (task.checklist.isNotEmpty()) {
+            Column {
+                task.checklist.forEachIndexed { index, item ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = item.checked, onCheckedChange = { onToggleChecklistItem(index) })
+                        Text(
+                            item.text,
+                            style = MaterialTheme.typography.bodyMedium,
+                            textDecoration = if (item.checked) TextDecoration.LineThrough else null,
+                            color = if (item.checked) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+            }
         }
         InfoRow("Приоритет", priorityLabel(task.priority))
         InfoRow("Статус", statusLabel(task.status))

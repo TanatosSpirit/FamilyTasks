@@ -5,6 +5,8 @@ import com.familytasks.app.domain.model.Priority
 import com.familytasks.app.domain.model.Recurrence
 import com.familytasks.app.domain.model.Task
 import com.familytasks.app.domain.model.TaskStatus
+import com.familytasks.app.domain.model.parseChecklist
+import com.familytasks.app.domain.model.serialize
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -29,7 +31,8 @@ data class TaskDto(
     val updatedAt: Long,
     val deleted: Boolean = false,
     val completedAt: Long? = null,
-    val repeatRule: String = "none"
+    val repeatRule: String = "none",
+    val checklist: String = "[]"
 )
 
 @Serializable
@@ -52,7 +55,8 @@ fun Task.toDto() = TaskDto(
     updatedAt = updatedAt,
     deleted = deleted,
     completedAt = completedAt,
-    repeatRule = recurrence.serialize()
+    repeatRule = recurrence.serialize(),
+    checklist = checklist.serialize()
 )
 
 fun TaskDto.toDomain() = Task(
@@ -68,7 +72,8 @@ fun TaskDto.toDomain() = Task(
     updatedAt = updatedAt,
     deleted = deleted,
     completedAt = completedAt,
-    recurrence = Recurrence.parse(repeatRule)
+    recurrence = Recurrence.parse(repeatRule),
+    checklist = checklist.parseChecklist()
 )
 
 fun Device.toDto() = DeviceDto(deviceId = deviceId, displayName = displayName, color = color)

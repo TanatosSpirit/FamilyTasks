@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.familytasks.app.core.DeviceIdManager
 import com.familytasks.app.core.PreferencesManager
+import com.familytasks.app.domain.model.ChecklistItem
 import com.familytasks.app.domain.model.Device
 import com.familytasks.app.domain.model.Priority
 import com.familytasks.app.domain.model.Recurrence
@@ -52,6 +53,7 @@ class CreateTaskViewModel @Inject constructor(
         dueDate: Long?,
         recurrence: Recurrence,
         isSecret: Boolean,
+        checklist: List<ChecklistItem>,
         onDone: () -> Unit
     ) {
         val now = System.currentTimeMillis()
@@ -69,7 +71,8 @@ class CreateTaskViewModel @Inject constructor(
             createdAt = now,
             updatedAt = now,
             recurrence = effectiveRecurrence,
-            isSecret = isSecret
+            isSecret = isSecret,
+            checklist = checklist.filter { it.text.isNotBlank() }
         )
         viewModelScope.launch {
             taskRepository.upsertTask(task)

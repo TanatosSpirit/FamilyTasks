@@ -81,8 +81,9 @@ class RecurrenceSpawnWorker @AssistedInject constructor(
                 completedAt = null,
                 dueDate = nextDue,
                 createdAt = now,
-                updatedAt = now
+                updatedAt = now,
                 // recurrence наследуется — клон продолжит цепочку
+                checklist = parent.checklist.map { it.copy(checked = false) }
             )
             taskRepository.upsertTask(clone)
             // Гасим родителя: он больше не плодит (идемпотентность при повторном/устаревшем запуске)

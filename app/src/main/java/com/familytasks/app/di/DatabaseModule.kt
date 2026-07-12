@@ -8,6 +8,7 @@ import com.familytasks.app.data.local.MIGRATION_1_2
 import com.familytasks.app.data.local.MIGRATION_2_3
 import com.familytasks.app.data.local.MIGRATION_3_4
 import com.familytasks.app.data.local.MIGRATION_4_5
+import com.familytasks.app.data.local.MIGRATION_5_6
 import com.familytasks.app.data.local.TaskDao
 import com.familytasks.app.data.local.TaskSyncStateDao
 import dagger.Module
@@ -25,7 +26,7 @@ object DatabaseModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): AppDatabase =
         Room.databaseBuilder(context, AppDatabase::class.java, "family_tasks.db")
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
             .fallbackToDestructiveMigration()
             .build()
 

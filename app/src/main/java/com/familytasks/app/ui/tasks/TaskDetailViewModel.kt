@@ -65,6 +65,16 @@ class TaskDetailViewModel @Inject constructor(
         applyDueNotificationState(updated, "cycleStatus")
     }
 
+    fun toggleChecklistItem(index: Int) {
+        val current = _task.value ?: return
+        val items = current.checklist.toMutableList()
+        if (index !in items.indices) return
+        items[index] = items[index].copy(checked = !items[index].checked)
+        // Условие due-уведомлений (assignedTo/status/deleted) чек-листом не затрагивается —
+        // applyDueNotificationState здесь не нужен.
+        update(current.copy(checklist = items, updatedAt = System.currentTimeMillis()))
+    }
+
     fun onCompleteButtonClicked() {
         val current = _task.value ?: return
         if (current.status == TaskStatus.TODO && isRecurringEligible(current)) {

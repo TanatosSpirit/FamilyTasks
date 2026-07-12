@@ -47,7 +47,8 @@ class RecurringTaskCompletionUseCase @Inject constructor(
             completedAt = null,
             dueDate = nextDue,
             createdAt = now,
-            updatedAt = now
+            updatedAt = now,
+            checklist = task.checklist.map { it.copy(checked = false) }
         )
         taskRepository.upsertTask(clone)
         notificationScheduler.scheduleDueNotifications(clone)

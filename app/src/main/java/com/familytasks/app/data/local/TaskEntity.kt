@@ -6,6 +6,8 @@ import com.familytasks.app.domain.model.Priority
 import com.familytasks.app.domain.model.Recurrence
 import com.familytasks.app.domain.model.Task
 import com.familytasks.app.domain.model.TaskStatus
+import com.familytasks.app.domain.model.parseChecklist
+import com.familytasks.app.domain.model.serialize
 
 @Entity(tableName = "tasks")
 data class TaskEntity(
@@ -22,7 +24,8 @@ data class TaskEntity(
     val deleted: Boolean,
     val completedAt: Long? = null,
     val repeatRule: String = "none",
-    val isSecret: Boolean = false
+    val isSecret: Boolean = false,
+    val checklist: String = "[]"
 )
 
 fun TaskEntity.toDomain() = Task(
@@ -39,7 +42,8 @@ fun TaskEntity.toDomain() = Task(
     deleted = deleted,
     completedAt = completedAt,
     recurrence = Recurrence.parse(repeatRule),
-    isSecret = isSecret
+    isSecret = isSecret,
+    checklist = checklist.parseChecklist()
 )
 
 fun Task.toEntity() = TaskEntity(
@@ -56,5 +60,6 @@ fun Task.toEntity() = TaskEntity(
     deleted = deleted,
     completedAt = completedAt,
     repeatRule = recurrence.serialize(),
-    isSecret = isSecret
+    isSecret = isSecret,
+    checklist = checklist.serialize()
 )

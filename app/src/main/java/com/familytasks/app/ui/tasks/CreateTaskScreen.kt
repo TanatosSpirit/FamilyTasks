@@ -41,6 +41,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.familytasks.app.domain.model.ChecklistItem
 import com.familytasks.app.domain.model.Priority
 import com.familytasks.app.domain.model.Recurrence
 import java.text.SimpleDateFormat
@@ -64,6 +65,7 @@ fun CreateTaskScreen(
     var dueDate by remember { mutableLongStateOf(0L) }
     var recurrence by remember { mutableStateOf<Recurrence>(Recurrence.None) }
     var isSecret by remember { mutableStateOf(false) }
+    var checklist by remember { mutableStateOf<List<ChecklistItem>>(emptyList()) }
 
     fun pickDateTime() {
         val cal = Calendar.getInstance()
@@ -115,6 +117,7 @@ fun CreateTaskScreen(
                 modifier = Modifier.fillMaxWidth(),
                 minLines = 2
             )
+            ChecklistEditor(items = checklist, onItemsChange = { checklist = it })
             Text("Приоритет", style = MaterialTheme.typography.titleSmall)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Priority.entries.forEach { p ->
@@ -183,14 +186,15 @@ fun CreateTaskScreen(
             Button(
                 onClick = {
                     vm.save(
-                        title,
-                        description,
-                        priority,
-                        assignedTo,
-                        if (dueDate > 0) dueDate else null,
-                        recurrence,
-                        isSecret,
-                        onBack
+                        title = title,
+                        description = description,
+                        priority = priority,
+                        assignedTo = assignedTo,
+                        dueDate = if (dueDate > 0) dueDate else null,
+                        recurrence = recurrence,
+                        isSecret = isSecret,
+                        checklist = checklist,
+                        onDone = onBack
                     )
                 },
                 enabled = title.isNotBlank(),

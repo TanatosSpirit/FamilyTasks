@@ -131,7 +131,7 @@ fun SettingsScreen(
                 )
             }
             SwitchRow(
-                label = "Пауза синхронизации (партнёра долго не будет)",
+                label = "Пауза синхронизации",
                 checked = state.syncPaused,
                 onToggle = vm::setSyncPaused
             )

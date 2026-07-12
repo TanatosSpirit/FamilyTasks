@@ -34,6 +34,7 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import com.familytasks.app.domain.model.ChecklistItem
 import com.familytasks.app.domain.model.Device
 import com.familytasks.app.domain.model.Priority
 import com.familytasks.app.domain.model.Recurrence
@@ -62,6 +63,7 @@ fun EditTaskContent(
     var dueDate by remember { mutableLongStateOf(task.dueDate ?: 0L) }
     var recurrence by remember { mutableStateOf(task.recurrence) }
     var isSecret by remember { mutableStateOf(task.isSecret) }
+    var checklist by remember { mutableStateOf(task.checklist) }
     var showUnSecretDialog by remember { mutableStateOf(false) }
 
     fun pickDateTime() {
@@ -103,6 +105,7 @@ fun EditTaskContent(
             modifier = Modifier.fillMaxWidth(),
             minLines = 2
         )
+        ChecklistEditor(items = checklist, onItemsChange = { checklist = it })
         Text("Приоритет")
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Priority.entries.forEach { p ->
@@ -201,7 +204,8 @@ fun EditTaskContent(
                     completedAt = completedAt,
                     // Повтор имеет смысл только с ответственным и дедлайном — иначе гасим
                     recurrence = if (assignedTo != null && dueDate > 0L) recurrence else Recurrence.None,
-                    isSecret = isSecret
+                    isSecret = isSecret,
+                    checklist = checklist.filter { it.text.isNotBlank() }
                 ))
             },
             enabled = title.isNotBlank(),

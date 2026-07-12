@@ -14,5 +14,6 @@ data class Task(
     val deleted: Boolean = false,
     val completedAt: Long? = null,
     val recurrence: Recurrence = Recurrence.None,
-    val isSecret: Boolean = false
+    val isSecret: Boolean = false,
+    val checklist: List<ChecklistItem> = emptyList()
 )

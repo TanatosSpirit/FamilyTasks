@@ -7,7 +7,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [TaskEntity::class, DeviceEntity::class, TaskSyncStateEntity::class],
-    version = 5,
+    version = 6,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -41,5 +41,11 @@ val MIGRATION_4_5 = object : Migration(4, 5) {
                 "taskId TEXT NOT NULL PRIMARY KEY, " +
                 "confirmedUpdatedAt INTEGER NOT NULL)"
         )
+    }
+}
+
+val MIGRATION_5_6 = object : Migration(5, 6) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE tasks ADD COLUMN checklist TEXT NOT NULL DEFAULT '[]'")
     }
 }
