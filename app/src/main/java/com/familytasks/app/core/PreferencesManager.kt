@@ -79,14 +79,9 @@ class PreferencesManager @Inject constructor(
             lastConfirmedSyncTimestampFlow.value = value
         }
 
-    val hideSecretTasksFlow = MutableStateFlow(prefs.getBoolean(KEY_HIDE_SECRET_TASKS, false))
-
-    var hideSecretTasks: Boolean
-        get() = prefs.getBoolean(KEY_HIDE_SECRET_TASKS, false)
-        set(value) {
-            prefs.edit().putBoolean(KEY_HIDE_SECRET_TASKS, value).apply()
-            hideSecretTasksFlow.value = value
-        }
+    // Только в памяти, не в SharedPreferences: после рестарта процесса секретные задачи
+    // скрыты. Дополнительно сбрасывается в false при уходе UI в фон (FamilyTasksApplication).
+    val showSecretTasksFlow = MutableStateFlow(false)
 
     val showPendingSyncIndicatorFlow = MutableStateFlow(prefs.getBoolean(KEY_SHOW_PENDING_SYNC_INDICATOR, false))
 
@@ -131,7 +126,6 @@ class PreferencesManager @Inject constructor(
         private const val KEY_LAST_OWN_IP = "last_own_ip"
         private const val KEY_LAST_PEER_IP = "last_peer_ip"
         private const val KEY_LAST_CONFIRMED_SYNC_TS = "last_confirmed_sync_ts"
-        private const val KEY_HIDE_SECRET_TASKS = "hide_secret_tasks"
         private const val KEY_SHOW_PENDING_SYNC_INDICATOR = "show_pending_sync_indicator"
         private const val KEY_WEB_UI_ENABLED = "web_ui_enabled"
         private const val KEY_SYNC_PAUSED = "sync_paused"

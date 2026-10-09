@@ -29,7 +29,7 @@ data class SettingsUiState(
     val notifyNewTask: Boolean = true,
     val notifyStatusChange: Boolean = true,
     val lastSyncAt: Long = 0L,
-    val hideSecretTasks: Boolean = false,
+    val showSecretTasks: Boolean = false,
     val showPendingSyncIndicator: Boolean = false,
     val webUiEnabled: Boolean = false,
     val syncPaused: Boolean = false,
@@ -60,6 +60,12 @@ class SettingsViewModel @Inject constructor(
                 _state.update { it.copy(lastSyncAt = ts) }
             }
         }
+        // Из flow, а не разовым чтением: флаг сбрасывается извне при уходе UI в фон.
+        viewModelScope.launch {
+            prefs.showSecretTasksFlow.collect { v ->
+                _state.update { it.copy(showSecretTasks = v) }
+            }
+        }
     }
 
     private fun load() {
@@ -73,7 +79,7 @@ class SettingsViewModel @Inject constructor(
                 notifyNewTask = prefs.notifyNewTask,
                 notifyStatusChange = prefs.notifyStatusChange,
                 lastSyncAt = prefs.lastSyncAt,
-                hideSecretTasks = prefs.hideSecretTasks,
+                showSecretTasks = prefs.showSecretTasksFlow.value,
                 showPendingSyncIndicator = prefs.showPendingSyncIndicator,
                 webUiEnabled = prefs.webUiEnabled,
                 syncPaused = prefs.syncPaused,
@@ -100,9 +106,8 @@ class SettingsViewModel @Inject constructor(
         _state.update { it.copy(notifyStatusChange = v) }
     }
 
-    fun setHideSecretTasks(v: Boolean) {
-        prefs.hideSecretTasks = v
-        _state.update { it.copy(hideSecretTasks = v) }
+    fun setShowSecretTasks(v: Boolean) {
+        prefs.showSecretTasksFlow.value = v
     }
 
     fun setShowPendingSyncIndicator(v: Boolean) {

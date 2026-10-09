@@ -208,9 +208,9 @@ fun SettingsScreen(
             HorizontalDivider()
             Text("Конфиденциальность", style = MaterialTheme.typography.titleMedium)
             SwitchRow(
-                label = "Скрыть секретные задачи",
-                checked = state.hideSecretTasks,
-                onToggle = vm::setHideSecretTasks
+                label = "Показать секретные задачи",
+                checked = state.showSecretTasks,
+                onToggle = vm::setShowSecretTasks
             )
             HorizontalDivider()
             Text("Экспериментальные фичи", style = MaterialTheme.typography.titleMedium)
