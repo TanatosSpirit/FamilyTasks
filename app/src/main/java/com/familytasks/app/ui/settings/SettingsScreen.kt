@@ -154,6 +154,13 @@ fun SettingsScreen(
                 Text("Поделиться задачами")
             }
             HorizontalDivider()
+            Text("Конфиденциальность", style = MaterialTheme.typography.titleMedium)
+            SwitchRow(
+                label = "Показать секретные задачи",
+                checked = state.showSecretTasks,
+                onToggle = vm::setShowSecretTasks
+            )
+            HorizontalDivider()
             BatteryOptimizationSection()
             HorizontalDivider()
             Text("Диагностика", style = MaterialTheme.typography.titleMedium)
@@ -205,13 +212,6 @@ fun SettingsScreen(
                     )
                 }
             }
-            HorizontalDivider()
-            Text("Конфиденциальность", style = MaterialTheme.typography.titleMedium)
-            SwitchRow(
-                label = "Показать секретные задачи",
-                checked = state.showSecretTasks,
-                onToggle = vm::setShowSecretTasks
-            )
             HorizontalDivider()
             Text("Экспериментальные фичи", style = MaterialTheme.typography.titleMedium)
             SwitchRow(
