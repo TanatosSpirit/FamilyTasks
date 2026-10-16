@@ -15,4 +15,7 @@ interface TaskSyncStateDao {
 
     @Query("DELETE FROM task_sync_state WHERE taskId IN (:ids)")
     suspend fun deleteByIds(ids: List<String>)
+
+    @Query("DELETE FROM task_sync_state")
+    suspend fun deleteAll()
 }

@@ -7,6 +7,9 @@ import android.content.Intent
 import android.net.Uri
 import android.os.PowerManager
 import android.provider.Settings
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -24,6 +27,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.OutlinedButton
@@ -34,6 +38,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -52,6 +57,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.familytasks.app.domain.usecase.OrphanDevice
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -154,6 +160,8 @@ fun SettingsScreen(
                 Text("Поделиться задачами")
             }
             HorizontalDivider()
+            BackupSection(vm)
+            HorizontalDivider()
             Text("Конфиденциальность", style = MaterialTheme.typography.titleMedium)
             SwitchRow(
                 label = "Показать секретные задачи",
@@ -166,6 +174,9 @@ fun SettingsScreen(
             Text("Диагностика", style = MaterialTheme.typography.titleMedium)
             OutlinedButton(onClick = onLogs, modifier = Modifier.fillMaxWidth()) {
                 Text("Логи синхронизации")
+            }
+            if (state.orphanDevices.isNotEmpty()) {
+                OrphanDevicesSection(state.orphanDevices, vm)
             }
             HorizontalDivider()
             Text("Уведомления", style = MaterialTheme.typography.titleMedium)
@@ -238,6 +249,109 @@ fun SettingsScreen(
             }
         }
     }
+}
+
+/**
+ * Устройства из Room, которые не мы и не текущий партнёр — обычно наш прежний id после
+ * переустановки. См. docs/device-rebinding.md.
+ */
+@Composable
+private fun OrphanDevicesSection(orphans: List<OrphanDevice>, vm: SettingsViewModel) {
+    val context = LocalContext.current
+    var confirming by remember { mutableStateOf<OrphanDevice?>(null) }
+
+    Text("Лишние устройства", style = MaterialTheme.typography.titleSmall)
+    Text(
+        "Не вы и не текущий партнёр. Обычно это ваш прежний id после переустановки приложения.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+    orphans.forEach { orphan ->
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .background(Color(orphan.device.color))
+            )
+            Column(modifier = Modifier.padding(start = 12.dp).weight(1f)) {
+                Text(orphan.device.displayName, style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    "ID: ${orphan.device.deviceId.take(8)} · задач: ${orphan.taskCount}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        OutlinedButton(onClick = { confirming = orphan }, modifier = Modifier.fillMaxWidth()) {
+            Text("Это моё прежнее устройство")
+        }
+    }
+
+    confirming?.let { orphan ->
+        AlertDialog(
+            onDismissRequest = { confirming = null },
+            title = { Text("Перенести на себя?") },
+            text = {
+                Text(
+                    "Задачи «${orphan.device.displayName}» (${orphan.taskCount}), включая секретные, " +
+                        "станут вашими, а это устройство будет забыто.\n\nОтменить это действие нельзя."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirming = null
+                    vm.claimFormerSelf(orphan.device.deviceId) {
+                        Toast.makeText(context, it, Toast.LENGTH_LONG).show()
+                    }
+                }) { Text("Перенести") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirming = null }) { Text("Отмена") }
+            }
+        )
+    }
+}
+
+@Composable
+private fun BackupSection(vm: SettingsViewModel) {
+    val context = LocalContext.current
+    val showResult: (String) -> Unit = { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
+
+    val saveLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri -> uri?.let { vm.saveBackup(it, showResult) } }
+
+    // */* — мессенджеры и облака часто отдают .json как octet-stream или text/plain;
+    // формат всё равно проверяется при чтении.
+    val restoreLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri -> uri?.let { vm.restoreBackup(it, showResult) } }
+
+    Text("Резервная копия", style = MaterialTheme.typography.titleMedium)
+    Text(
+        "Все задачи, включая секретные, в один файл. Восстановление не удаляет текущие задачи — " +
+            "сливает с ними, более свежие версии побеждают.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+    OutlinedButton(
+        onClick = { saveLauncher.launch(vm.backupFileName()) },
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Text("Сохранить резервную копию")
+    }
+    OutlinedButton(
+        onClick = { restoreLauncher.launch(arrayOf("*/*")) },
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Text("Восстановить из копии")
+    }
+    Text(
+        "Файл не зашифрован — секретные задачи в нём читаются любым, у кого есть доступ к файлу.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.error
+    )
 }
 
 @Composable

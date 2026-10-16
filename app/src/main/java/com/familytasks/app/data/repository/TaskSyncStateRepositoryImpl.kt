@@ -21,4 +21,7 @@ class TaskSyncStateRepositoryImpl @Inject constructor(
 
     override suspend fun deleteByIds(ids: List<String>) =
         dao.deleteByIds(ids)
+
+    override suspend fun clearAll() =
+        dao.deleteAll()
 }

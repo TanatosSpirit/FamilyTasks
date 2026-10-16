@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -18,6 +19,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -29,6 +31,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
 import com.familytasks.app.PortraitCaptureActivity
@@ -47,6 +50,28 @@ fun QrCodeScreen(
         if (result.contents != null) {
             vm.onQrScanned(result.contents, onDone)
         }
+    }
+    val pendingPairing by vm.pendingPairing.collectAsStateWithLifecycle()
+
+    pendingPairing?.let { pending ->
+        val formerNames = pending.formerPartners.joinToString { "«${it.displayName}»" }
+        AlertDialog(
+            onDismissRequest = vm::cancelPairing,
+            title = { Text("Сменить партнёра?") },
+            text = {
+                Text(
+                    "Задачи, назначенные на $formerNames или созданные им, перейдут к " +
+                        "«${pending.newPartner.displayName}». Прежнее устройство будет забыто.\n\n" +
+                        "Отменить это действие нельзя."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { vm.confirmPairing(onDone) }) { Text("Перенести") }
+            },
+            dismissButton = {
+                TextButton(onClick = vm::cancelPairing) { Text("Отмена") }
+            }
+        )
     }
 
     Scaffold(

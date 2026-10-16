@@ -36,4 +36,7 @@ class TaskRepositoryImpl @Inject constructor(
 
     override suspend fun purgeTasks(ids: List<String>) =
         dao.purgeByIds(ids)
+
+    override suspend fun reassignDevice(fromIds: List<String>, toId: String, updatedAt: Long): Int =
+        dao.reassignDevice(fromIds, toId, updatedAt)
 }

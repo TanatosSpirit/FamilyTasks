@@ -12,4 +12,5 @@ interface TaskRepository {
     suspend fun deleteTask(id: String, updatedAt: Long)
     suspend fun getAllTasksSnapshot(): List<Task>
     suspend fun purgeTasks(ids: List<String>)
+    suspend fun reassignDevice(fromIds: List<String>, toId: String, updatedAt: Long): Int
 }

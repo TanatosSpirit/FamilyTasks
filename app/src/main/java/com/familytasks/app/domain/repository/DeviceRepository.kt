@@ -8,4 +8,5 @@ interface DeviceRepository {
     suspend fun getDeviceById(id: String): Device?
     suspend fun upsertDevice(device: Device)
     suspend fun getAllDevices(): List<Device>
+    suspend fun deleteDevices(ids: List<String>)
 }

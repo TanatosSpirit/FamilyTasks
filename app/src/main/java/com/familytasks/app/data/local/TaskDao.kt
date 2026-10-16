@@ -30,4 +30,14 @@ interface TaskDao {
 
     @Query("DELETE FROM tasks WHERE id IN (:ids)")
     suspend fun purgeByIds(ids: List<String>)
+
+    // Одним UPDATE — атомарно: assignedTo и createdBy переписываются вместе.
+    @Query(
+        "UPDATE tasks SET " +
+            "assignedTo = CASE WHEN assignedTo IN (:fromIds) THEN :toId ELSE assignedTo END, " +
+            "createdBy = CASE WHEN createdBy IN (:fromIds) THEN :toId ELSE createdBy END, " +
+            "updatedAt = :updatedAt " +
+            "WHERE assignedTo IN (:fromIds) OR createdBy IN (:fromIds)"
+    )
+    suspend fun reassignDevice(fromIds: List<String>, toId: String, updatedAt: Long): Int
 }

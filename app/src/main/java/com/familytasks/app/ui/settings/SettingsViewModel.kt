@@ -2,17 +2,21 @@ package com.familytasks.app.ui.settings
 
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.familytasks.app.core.AppLogger
 import com.familytasks.app.core.DeviceIdManager
 import com.familytasks.app.core.PreferencesManager
+import com.familytasks.app.data.backup.BackupManager
 import com.familytasks.app.data.sync.ExportImportManager
 import com.familytasks.app.data.sync.SyncManager
 import com.familytasks.app.data.sync.SyncService
 import com.familytasks.app.domain.model.Device
 import com.familytasks.app.domain.repository.DeviceRepository
+import com.familytasks.app.domain.usecase.FormerSelfUseCase
+import com.familytasks.app.domain.usecase.OrphanDevice
 import com.familytasks.app.notifications.NotificationScheduler
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -36,7 +40,8 @@ data class SettingsUiState(
     val ownIp: String? = null,
     val dailySummaryEnabled: Boolean = false,
     val dailySummaryHour: Int = 8,
-    val dailySummaryMinute: Int = 0
+    val dailySummaryMinute: Int = 0,
+    val orphanDevices: List<OrphanDevice> = emptyList()
 )
 
 @HiltViewModel
@@ -47,6 +52,8 @@ class SettingsViewModel @Inject constructor(
     private val deviceRepository: DeviceRepository,
     private val syncManager: SyncManager,
     private val exportImportManager: ExportImportManager,
+    private val backupManager: BackupManager,
+    private val formerSelfUseCase: FormerSelfUseCase,
     private val notificationScheduler: NotificationScheduler
 ) : ViewModel() {
 
@@ -86,8 +93,17 @@ class SettingsViewModel @Inject constructor(
                 ownIp = prefs.lastKnownOwnIp,
                 dailySummaryEnabled = prefs.dailySummaryEnabled,
                 dailySummaryHour = prefs.dailySummaryHour,
-                dailySummaryMinute = prefs.dailySummaryMinute
+                dailySummaryMinute = prefs.dailySummaryMinute,
+                orphanDevices = formerSelfUseCase.orphans()
             )
+        }
+    }
+
+    fun claimFormerSelf(deviceId: String, onResult: (String) -> Unit) {
+        viewModelScope.launch {
+            val changed = formerSelfUseCase.claim(deviceId)
+            onResult("Задач перенесено на вас: $changed")
+            load()
         }
     }
 
@@ -167,6 +183,20 @@ class SettingsViewModel @Inject constructor(
     fun buildExportIntent(onIntent: (Intent) -> Unit) {
         viewModelScope.launch {
             onIntent(exportImportManager.buildShareIntent())
+        }
+    }
+
+    fun backupFileName(): String = backupManager.suggestedFileName()
+
+    fun saveBackup(uri: Uri, onResult: (String) -> Unit) {
+        viewModelScope.launch { onResult(backupManager.writeBackup(uri)) }
+    }
+
+    fun restoreBackup(uri: Uri, onResult: (String) -> Unit) {
+        viewModelScope.launch {
+            onResult(backupManager.restoreBackup(uri))
+            // Восстановление могло добавить запись о партнёре в devices.
+            load()
         }
     }
 

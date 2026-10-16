@@ -18,4 +18,7 @@ interface DeviceDao {
 
     @Upsert
     suspend fun upsert(device: DeviceEntity)
+
+    @Query("DELETE FROM devices WHERE deviceId IN (:ids)")
+    suspend fun deleteByIds(ids: List<String>)
 }

@@ -24,4 +24,7 @@ class DeviceRepositoryImpl @Inject constructor(
 
     override suspend fun getAllDevices(): List<Device> =
         dao.getAll().map { it.toDomain() }
+
+    override suspend fun deleteDevices(ids: List<String>) =
+        dao.deleteByIds(ids)
 }

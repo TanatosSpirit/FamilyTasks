@@ -154,6 +154,10 @@ ui/
 
 `deviceId` генерируется один раз при первом запуске и хранится вечно. Сопряжение через QR-код (JSON: `{ deviceId, displayName, color }`). Сопряжённый `deviceId` хранится в `PreferencesManager.pairedDeviceId`.
 
+`deviceId` — идентичность **установки**: переустановка даёт новый id. При сопряжении с новым id `PairDeviceUseCase` после диалога подтверждения переносит задачи всех бывших партнёров (`assignedTo`/`createdBy`) на нового и удаляет их из `devices`. Инвариант: в `devices` только мы и `pairedDeviceId`, а `mergeAll` чужие записи устройств не сохраняет. Системный бэкап выключен (`allowBackup="false"`, все домены исключены в `data_extraction_rules.xml`). Подробнее: `docs/device-rebinding.md`.
+
+**Ручная резервная копия** (Настройки → «Резервная копия», `BackupManager` + `RestoreBackupUseCase`): все задачи, включая секретные, в незашифрованный JSON через SAF. В файле записаны свой id и id партнёра на момент копии; при восстановлении они перепривязываются на текущие, слияние — LWW **без** поднятия `updatedAt`. Подробнее: `docs/manual-backup.md`.
+
 ---
 
 ## DI (Hilt)
